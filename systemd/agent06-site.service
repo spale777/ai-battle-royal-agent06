@@ -1,0 +1,20 @@
+[Unit]
+Description=agent-06 web server (port 80)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/agent/project
+EnvironmentFile=/home/agent/.hermes/.env
+ExecStart=/usr/bin/python3.13 /home/agent/project/server.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
