@@ -230,6 +230,37 @@ canvas.garden {
   margin-top: 0.5rem;
 }
 
+/* What's new */
+.commit-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.commit-list li {
+  padding: 0.7rem 0;
+  border-bottom: 1px dotted var(--rule);
+}
+.commit-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.commit-row .sha {
+  color: var(--accent);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+.commit-row .sha:hover { text-decoration: underline; }
+.commit-row .subject {
+  color: var(--fg);
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+.commit-list .meta { font-size: 12px; margin-top: 0.2rem; margin-left: 4.2rem; }
+.status-line { margin: 0.5rem 0 1rem; font: 13px ui-monospace, Menlo, monospace; }
+
 /* Notes */
 .notes-list { list-style: none; padding: 0; margin: 1rem 0; }
 .notes-list li {
@@ -242,3 +273,15 @@ canvas.garden {
   display: block;
   margin-bottom: 0.2rem;
 }
+
+/* Stats sparkline */
+.spark-wrap { margin: 1rem 0; }
+.spark {
+  display: block;
+  width: 100%;
+  height: 80px;
+  background: var(--accent-soft);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+.spark-meta { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-top: 0.3rem; }

@@ -35,7 +35,19 @@
   function draw(ctx, w, h, seed) {
     const rng = lcg(seed);
     const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
-    const [stem, leaf, petal, center, sky] = palette;
+    let [stem, leaf, petal, center, sky] = palette;
+
+    // Time-of-day lighting: tint sky and petals based on a deterministic offset.
+    // 0=dawn, 0.25=morning, 0.5=noon, 0.75=dusk, ~0.9=night
+    const timeHash = hashString(seed.toString(16) + ':time');
+    const phase = (lcg(timeHash)());
+    const tod = todLighting(phase);
+
+    sky = mix(sky, tod.sky, 0.55);
+    stem = mix(stem, tod.plant, 0.35);
+    leaf = mix(leaf, tod.plant, 0.4);
+    petal = mix(petal, tod.plant, 0.25);
+    center = mix(center, tod.warm, 0.4);
 
     // sky/background
     ctx.fillStyle = sky;
@@ -63,18 +75,81 @@
       drawFlower(ctx, x, baseY, height, sway, stem, leaf, petal, center, rng);
     }
 
-    // sun
+    // sun or moon, depending on time of day
     const sunX = w * (0.15 + rng() * 0.7);
     const sunY = h * (0.1 + rng() * 0.25);
     const sunR = 18 + rng() * 16;
     const grad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 2);
-    grad.addColorStop(0, '#fffbe8');
-    grad.addColorStop(0.5, '#ffe9a8aa');
-    grad.addColorStop(1, '#ffe9a800');
+    grad.addColorStop(0, tod.glowInner);
+    grad.addColorStop(0.5, tod.glowMid + 'aa');
+    grad.addColorStop(1, tod.glowOuter + '00');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(sunX, sunY, sunR * 2, 0, Math.PI * 2);
     ctx.fill();
+
+    // darken the lower half a touch at dawn/dusk/night
+    if (tod.darken > 0) {
+      ctx.fillStyle = `rgba(10, 14, 30, ${tod.darken})`;
+      ctx.fillRect(0, h * 0.55, w, h * 0.45);
+    }
+
+    // store phase for the UI
+    ctx._todPhase = phase;
+    ctx._todLabel = tod.label;
+  }
+
+  function mix(hexA, hexB, t) {
+    const a = hexToRgb(hexA), b = hexToRgb(hexB);
+    const r = Math.round(a.r * (1 - t) + b.r * t);
+    const g = Math.round(a.g * (1 - t) + b.g * t);
+    const bl = Math.round(a.b * (1 - t) + b.b * t);
+    return rgbToHex(r, g, bl);
+  }
+  function hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+  }
+  function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Returns a palette overlay + sun glow colors for a given phase [0,1].
+  function todLighting(phase) {
+    // piecewise: dawn (0-.15), morning (.15-.4), noon (.4-.55), dusk (.55-.75), night (.75-1)
+    if (phase < 0.15) {
+      return {
+        sky: '#f7c9b0', plant: '#8a6a78', warm: '#f0a060',
+        glowInner: '#ffe0c0', glowMid: '#f7c9b0', glowOuter: '#f7c9b0',
+        darken: 0.0, label: 'dawn',
+      };
+    }
+    if (phase < 0.40) {
+      return {
+        sky: '#d8e8f0', plant: '#6a8a6a', warm: '#f5d56a',
+        glowInner: '#fffbe8', glowMid: '#ffe9a8', glowOuter: '#ffe9a8',
+        darken: 0.0, label: 'morning',
+      };
+    }
+    if (phase < 0.55) {
+      return {
+        sky: '#b8d8e8', plant: '#5a8a4a', warm: '#f5d56a',
+        glowInner: '#ffffff', glowMid: '#fff6c8', glowOuter: '#fff6c8',
+        darken: 0.0, label: 'noon',
+      };
+    }
+    if (phase < 0.75) {
+      return {
+        sky: '#e8a888', plant: '#7a5a4a', warm: '#f5a060',
+        glowInner: '#ffd0a0', glowMid: '#e8a888', glowOuter: '#e8a888',
+        darken: 0.0, label: 'dusk',
+      };
+    }
+    return {
+      sky: '#1a1d3a', plant: '#4a4a6a', warm: '#7a8aaa',
+      glowInner: '#e0e8ff', glowMid: '#a0a8d0', glowOuter: '#1a1d3a',
+      darken: 0.0, label: 'night',
+    };
   }
 
   function drawFlower(ctx, x, baseY, height, sway, stem, leaf, petal, center, rng) {
@@ -133,7 +208,10 @@
     }
     draw(ctx, canvas.width, canvas.height, seed);
     const display = document.getElementById('seed-display');
-    if (display) display.textContent = 'seed: ' + (seed.toString(16));
+    if (display) {
+      const label = ctx._todLabel || '?';
+      display.textContent = 'seed: ' + seed.toString(16) + ' · ' + label;
+    }
   }
 
   function setupUI() {

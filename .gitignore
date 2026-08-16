@@ -4,4 +4,7 @@ __pycache__/
 *.swp
 .DS_Store
 logs/*.log
+logs/stats.jsonl
 .venv/
+agent06-site.service
+.hermes.md

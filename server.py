@@ -30,6 +30,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 SITE_ROOT = PROJECT_ROOT / "site"
 LOG_DIR = PROJECT_ROOT / "logs"
 ACCESS_LOG = LOG_DIR / "access.log"
+STATS_LOG = LOG_DIR / "stats.jsonl"
+STATS_LOG_MAX_LINES = 5000  # ring-ish: keep at most this many recent samples
 
 NOTEBOOK_URL = "http://10.0.0.18/api/v1/stats"
 HOOK_SECRET = os.environ.get("HOOK_SECRET", "")
@@ -103,26 +105,85 @@ def fetch_visitor_stats() -> dict:
     shaped = {"visits": visits, "fetched_at": int(now)}
     _STATS_CACHE["data"] = shaped
     _STATS_CACHE["fetched_at"] = now
+    _append_stats_sample(int(now), visits)
     return shaped
+
+
+def _append_stats_sample(ts: int, visits) -> None:
+    """Append one sample to the stats log. Best-effort, never raise."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"t": ts, "v": visits}, separators=(",", ":")) + "\n"
+        with STATS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+        # Trim if the file is too long.
+        try:
+            with STATS_LOG.open("r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+            if len(lines) > STATS_LOG_MAX_LINES:
+                keep = lines[-STATS_LOG_MAX_LINES:]
+                with STATS_LOG.open("w", encoding="utf-8") as fh:
+                    fh.writelines(keep)
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+
+def read_stats_history() -> list:
+    """Return all logged samples as a list of {t, v}."""
+    try:
+        with STATS_LOG.open("r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except (OSError, FileNotFoundError):
+        return []
+    out = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if "t" in obj:
+            out.append({"t": obj["t"], "v": obj.get("v")})
+    return out
 
 
 def git_last_commit() -> dict:
     """Return the timestamp and short sha of HEAD, if available."""
+    return git_recent_commits(1)[0] if git_recent_commits(1) else {"committed_at": "", "sha": "", "subject": ""}
+
+
+def git_recent_commits(limit: int = 20) -> list:
+    """Return up to `limit` recent commits with timestamp, sha, and subject."""
     try:
         common = ["git", "-c", "safe.directory=*", "-C", str(PROJECT_ROOT)]
-        ts = subprocess.check_output(
-            common + ["log", "-1", "--format=%cI"],
-            text=True,
-            timeout=5,
-        ).strip()
-        sha = subprocess.check_output(
-            common + ["log", "-1", "--format=%h"],
+        fmt = "%H%x1f%h%x1f%cI%x1f%an%x1f%s"
+        raw = subprocess.check_output(
+            common + ["log", f"-{limit}", f"--format={fmt}"],
             text=True,
             timeout=5,
         ).strip()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        ts, sha = "", ""
-    return {"committed_at": ts, "sha": sha}
+        return []
+    out = []
+    for line in raw.splitlines():
+        if not line:
+            continue
+        parts = line.split("\x1f", 4)
+        if len(parts) != 5:
+            continue
+        full_sha, sha, ts, author, subject = parts
+        out.append({
+            "sha": sha,
+            "full_sha": full_sha,
+            "committed_at": ts,
+            "author": author,
+            "subject": subject,
+        })
+    return out
 
 
 def safe_join(root: Path, rel: str) -> Path | None:
@@ -174,8 +235,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "ts": int(time.time())})
         if path == "/api/stats":
             return self._json(200, fetch_visitor_stats())
+        if path == "/api/stats/history":
+            return self._json(200, {"samples": read_stats_history()})
         if path == "/api/build":
             return self._json(200, git_last_commit())
+        if path == "/api/logs":
+            try:
+                limit = int(self.path.split("?", 1)[1].split("limit=", 1)[1].split("&")[0])
+            except (IndexError, ValueError):
+                limit = 20
+            limit = max(1, min(limit, 200))
+            return self._json(200, {"commits": git_recent_commits(limit)})
 
         # Static files
         target = safe_join(SITE_ROOT, path)
