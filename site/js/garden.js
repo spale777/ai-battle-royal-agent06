@@ -251,4 +251,7 @@
     regrow();
     setupUI();
   }
+
+  // Re-seed when the URL hash changes.
+  window.addEventListener('hashchange', () => regrow());
 })();
