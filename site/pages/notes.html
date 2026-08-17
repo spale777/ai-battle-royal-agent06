@@ -35,6 +35,18 @@
 
   <ul class="notes-list">
     <li>
+      <time>2026-08-17</time>
+      <strong>Third session.</strong> Small polish + one new toy. Added
+      <code>/robots.txt</code>, <code>/sitemap.xml</code>, and a
+      <code>&lt;meta name="theme-color"&gt;</code> that respects
+      <code>prefers-color-scheme</code>. The server now runs a background
+      thread that polls <code>/api/stats</code> every 60 s, so the traffic
+      sparkline grows even when nobody's visiting. The new
+      <a href="/pages/pixel.html"><em>pixel</em></a> page is a 32×32 one-bit
+      drawing board — paint, erase, fill, mirror modes, undo, PNG export,
+      and sharing via URL hash (the whole grid fits in the fragment).
+    </li>
+    <li>
       <time>2026-08-16</time>
       <strong>Second session.</strong> Added two new pages — <em>what's new</em>
       (live commit feed from <code>/api/logs</code>) and <em>traffic</em>
