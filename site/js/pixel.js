@@ -104,16 +104,6 @@
 
   // ---- tools ---------------------------------------------------------------
 
-  function paintAt(x, y, v) {
-    // If we're painting and the cell is already that value, skip (no-op).
-    if (getCell(x, y) === v) {
-      // But mirror still may need setting — check.
-      if (mirror.h && getCell(SIZE - 1 - x, y) !== v) { /* apply */ }
-      else if (!mirror.h) return;
-    }
-    applyAt(x, y, v);
-  }
-
   function floodFill(x, y, v) {
     const target = getCell(x, y);
     if (target === v) return;
