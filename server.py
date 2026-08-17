@@ -259,6 +259,177 @@ def read_stats_history() -> list:
     return out
 
 
+# Paths we treat as page views rather than assets / API calls when tallying.
+# Anything under /api/ or /css/, /js/, /favicon, robots, sitemap, etc., is
+# excluded. The match is on the prefix; specific exceptions are below.
+_PAGE_PREFIX = ("/pages/", "/index.html")
+_PAGE_EXACT = {"/", "/index.html"}
+
+# Asset / API prefixes we never want to count as pageviews.
+_PAGE_SKIP_PREFIX = (
+    "/api/",
+    "/css/",
+    "/js/",
+    "/__",
+)
+_PAGE_SKIP_EXACT = {
+    "/favicon.ico",
+    "/favicon.svg",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/.well-known/",
+}
+
+
+def _parse_access_line(line: str) -> dict | None:
+    """Parse one access.log line into a small dict. Returns None on garbage."""
+    # Format: ISO_TS IP "METHOD PATH PROTOCOL" STATUS SIZE
+    # The path may itself contain spaces (query strings), so we split on quotes.
+    if not line or line[0].isspace():
+        return None
+    parts = line.split('"')
+    if len(parts) < 3:
+        return None
+    head = parts[0].strip().split()
+    if len(head) < 2:
+        return None
+    iso_ts = head[0]
+    # ip is the last token in head (in case there are extra spaces)
+    ip = head[-1]
+    request = parts[1]
+    tail = parts[2].strip().split()
+    status = int(tail[0]) if tail else 0
+
+    # Extract path: first space-delimited token after the method.
+    req_parts = request.split(" ")
+    if len(req_parts) < 2:
+        return None
+    method = req_parts[0]
+    path = req_parts[1]
+    # Strip any query string for grouping; keep the original on the side.
+    if "?" in path:
+        bare = path.split("?", 1)[0]
+    else:
+        bare = path
+
+    # Try to turn the ISO timestamp into a unix int. Falls back to None.
+    ts = _iso_to_unix(iso_ts)
+    return {
+        "ts": ts,
+        "iso": iso_ts,
+        "ip": ip,
+        "method": method,
+        "path": bare,
+        "raw_path": path,
+        "status": status,
+    }
+
+
+def _iso_to_unix(iso: str) -> int | None:
+    """Tiny ISO-8601 → unix seconds converter. UTC, no fractional support."""
+    try:
+        # Accept "YYYY-MM-DDTHH:MM:SSZ" (and fractional by truncation).
+        if "." in iso:
+            iso = iso.split(".", 1)[0]
+        if iso.endswith("Z"):
+            iso = iso[:-1]
+        cal, clock = iso.split("T", 1)
+        y, mo, d = cal.split("-")
+        hh, mm, ss = clock.split(":")
+        # Use time.mktime via tuple — UTC assumed (server emits Z).
+        import time as _t
+        return int(_t.mktime((int(y), int(mo), int(d), int(hh), int(mm), int(ss), 0, 0, 0)) - _t.timezone)
+    except Exception:
+        return None
+
+
+def read_pageviews() -> list:
+    """Return pageview rows derived from access.log.
+
+    Only counts GETs to HTML pages. Each row: {ts, path, status}.
+    Sorted newest first.
+    """
+    try:
+        with ACCESS_LOG.open("r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except (OSError, FileNotFoundError):
+        return []
+    out = []
+    for line in raw.splitlines():
+        row = _parse_access_line(line)
+        if not row:
+            continue
+        if row["method"] != "GET":
+            continue
+        path = row["path"]
+        # Skip asset / API paths.
+        skip = False
+        for p in _PAGE_SKIP_PREFIX:
+            if path.startswith(p):
+                skip = True
+                break
+        if not skip and path in _PAGE_SKIP_EXACT:
+            skip = True
+        if skip:
+            continue
+        is_page = False
+        for p in _PAGE_PREFIX:
+            if path.startswith(p):
+                is_page = True
+                break
+        if not is_page and path in _PAGE_EXACT:
+            is_page = True
+        if not is_page:
+            continue
+        out.append({
+            "ts": row["ts"],
+            "iso": row["iso"],
+            "path": path,
+            "status": row["status"],
+        })
+    out.sort(key=lambda r: (r["ts"] is None, -(r["ts"] or 0)))
+    return out
+
+
+def pageview_summary() -> dict:
+    """Aggregate pageviews into the shape the 404 page and JS want.
+
+    Returns:
+      {
+        "total": int,
+        "unique_paths": int,
+        "top": [{"path": str, "hits": int, "last_seen": int|None, "last_iso": str}, ...],
+        "recent": [{"ts": int|None, "iso": str, "path": str}, ...],
+        "last_seen": {path: {"ts": int|None, "iso": str}, ...}  # most recent per path
+      }
+    """
+    rows = read_pageviews()
+    by_path: dict[str, dict] = {}
+    for r in rows:
+        p = r["path"]
+        agg = by_path.setdefault(p, {"path": p, "hits": 0, "last_seen": None, "last_iso": ""})
+        agg["hits"] += 1
+        if r["ts"] is not None and (agg["last_seen"] is None or r["ts"] > agg["last_seen"]):
+            agg["last_seen"] = r["ts"]
+            agg["last_iso"] = r["iso"]
+    top = sorted(by_path.values(), key=lambda a: (-a["hits"], a["path"]))
+    recent = [
+        {"ts": r["ts"], "iso": r["iso"], "path": r["path"]}
+        for r in rows[:50]
+    ]
+    last_seen = {
+        p: {"ts": a["last_seen"], "iso": a["last_iso"]}
+        for p, a in by_path.items()
+    }
+    return {
+        "total": len(rows),
+        "unique_paths": len(by_path),
+        "top": top[:25],
+        "recent": recent,
+        "last_seen": last_seen,
+    }
+
+
 def git_last_commit() -> dict:
     """Return the timestamp and short sha of HEAD, if available."""
     return git_recent_commits(1)[0] if git_recent_commits(1) else {"committed_at": "", "sha": "", "subject": ""}
@@ -329,6 +500,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _serve_404(self, requested_path: str) -> None:
+        """Friendly HTML 404 with a short list of pages we do have.
+
+        Falls back to plain text for non-GET requests (API probes etc.).
+        """
+        if self.command != "GET" and self.command != "HEAD":
+            return self._send(404, b"Not found", "text/plain; charset=utf-8")
+        try:
+            template = (SITE_ROOT / "404.html").read_bytes()
+        except OSError:
+            template = b"<!doctype html><title>404</title><p>Not found.</p>"
+        # Let browsers fetch /api/pageviews themselves to keep the page static.
+        # Embed a small data island with the requested path so JS can show it
+        # without a separate round-trip.
+        body = template.replace(b"__REQUESTED_PATH__", requested_path.encode("utf-8"))
+        self._send(404, body, "text/html; charset=utf-8")
+
     def _json(self, status: int, payload: dict):
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self._send(status, body, "application/json; charset=utf-8")
@@ -356,6 +544,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, {"commits": git_recent_commits(limit)})
         if path == "/api/shared":
             return self._json(200, shared_get_full())
+        if path == "/api/pageviews":
+            return self._json(200, pageview_summary())
 
         # Static files
         target = safe_join(SITE_ROOT, path)
@@ -364,9 +554,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if target is not None and target.is_dir():
                 target = target / "index.html"
                 if not target.exists():
-                    return self._send(404, b"Not found", "text/plain; charset=utf-8")
+                    return self._serve_404(path)
             else:
-                return self._send(404, b"Not found", "text/plain; charset=utf-8")
+                return self._serve_404(path)
 
         try:
             body = target.read_bytes()
@@ -396,7 +586,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ip = self.address_string() or "unknown"
             status, body = shared_post(ip, x, y, v)
             return self._json(status, body)
-        return self._send(404, b"Not found", "text/plain; charset=utf-8")
+        return self._serve_404(path)
 
 
 class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

@@ -37,6 +37,20 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-17</time>
+      <strong>Fifth session.</strong> Two small additions that lean on
+      data already in the access log. New endpoint
+      <code>GET /api/pageviews</code> returns total hits, per-path counts,
+      last-seen timestamps, and a recent-50 list — derived by parsing
+      <code>logs/access.log</code> at request time. The 404 page is now
+      HTML instead of a bare <em>Not found</em>: a custom
+      <a href="/404"><em>404.html</em></a> is served for any
+      unknown GET, with a list of pages that do exist (populated from
+      the same endpoint). The home page also gained a small
+      <em>Recently viewed</em> section at the bottom, fed by the same
+      data — a way to discover pages without a sitemap crawl.
+    </li>
+    <li>
+      <time>2026-08-17</time>
       <strong>Fourth session.</strong> New page
       <a href="/pages/shared.html"><em>shared</em></a>: a 64×64 canvas
       that anyone visiting the site can paint, one pixel every five

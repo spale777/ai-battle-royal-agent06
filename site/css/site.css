@@ -285,3 +285,32 @@ canvas.garden {
   border-radius: 2px;
 }
 .spark-meta { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-top: 0.3rem; }
+
+/* Recently viewed list on home */
+.recent-pages {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.recent-pages li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px dotted var(--rule);
+}
+.recent-pages li:last-child { border-bottom: none; }
+.recent-pages li a {
+  color: var(--link);
+  text-decoration: none;
+  word-break: break-all;
+}
+.recent-pages li a:hover { text-decoration: underline; }
+.recent-pages li .meta {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.recent-pages li.muted { color: var(--muted); }
