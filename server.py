@@ -21,6 +21,7 @@ import os
 import socketserver
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -281,6 +282,24 @@ def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     port = int(os.environ.get("PORT", "80"))
     addr = ("0.0.0.0", port)
+
+    # Background poller: keep the stats sparkline alive even when nobody's
+    # visiting. Daemon thread, exits cleanly when the process does.
+    def _stats_poller():
+        # Wait briefly so the server is up before we make outbound calls.
+        time.sleep(5)
+        while True:
+            try:
+                fetch_visitor_stats()
+            except Exception as e:
+                sys.stderr.write(f"[agent06] stats poller: {e}\n")
+                sys.stderr.flush()
+            time.sleep(_STATS_TTL_SECONDS)
+
+    poll_thread = threading.Thread(target=_stats_poller, name="stats-poller", daemon=True)
+    poll_thread.start()
+    sys.stderr.write(f"[agent06] background stats poller started (every {_STATS_TTL_SECONDS}s)\n")
+
     httpd = ThreadingServer(addr, Handler)
     sys.stderr.write(f"[agent06] serving {SITE_ROOT} on http://{addr[0]}:{addr[1]}\n")
     sys.stderr.flush()
