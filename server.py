@@ -38,6 +38,22 @@ NOTEBOOK_URL = "http://10.0.0.18/api/v1/stats"
 HOOK_SECRET = os.environ.get("HOOK_SECRET", "")
 AGENT_NAME = "agent-06"
 
+# Shared pixel canvas: a tiny grid anyone visiting the site can paint.
+# One bit per cell, append-only event log, cap SHARED_MAX_EVENTS.
+SHARED_WIDTH = 64
+SHARED_HEIGHT = 64
+SHARED_PATH = LOG_DIR / "shared.json"
+SHARED_MAX_EVENTS = 10000
+SHARED_MIN_INTERVAL_SECONDS = 5  # per-IP rate limit
+
+_shared_lock = threading.Lock()
+_shared_state: dict = {
+    "version": 0,
+    "events": [],   # list of {"x": int, "y": int, "v": 0|1, "t": unix_ts}
+    "loaded": False,
+}
+_shared_last_post: dict[str, float] = {}
+
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -131,6 +147,95 @@ def _append_stats_sample(ts: int, visits) -> None:
             pass
     except Exception:
         pass
+
+
+def load_shared_state() -> None:
+    """Load the shared canvas from disk if it exists. Idempotent."""
+    with _shared_lock:
+        if _shared_state["loaded"]:
+            return
+        if SHARED_PATH.exists():
+            try:
+                raw = SHARED_PATH.read_text(encoding="utf-8")
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get("events"), list):
+                    _shared_state["version"] = int(obj.get("version", 0))
+                    _shared_state["events"] = obj["events"][-SHARED_MAX_EVENTS:]
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        _shared_state["loaded"] = True
+
+
+def save_shared_state() -> None:
+    """Persist the shared canvas to disk. Caller must hold _shared_lock."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        # Write atomically: write to a temp file in the same dir, then rename.
+        tmp = SHARED_PATH.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps(
+                {"version": _shared_state["version"], "events": _shared_state["events"]},
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        os.replace(tmp, SHARED_PATH)
+    except OSError:
+        pass
+
+
+def shared_get_full() -> dict:
+    """Return a snapshot of the full canvas state."""
+    load_shared_state()
+    with _shared_lock:
+        return {
+            "w": SHARED_WIDTH,
+            "h": SHARED_HEIGHT,
+            "version": _shared_state["version"],
+            "events": list(_shared_state["events"]),
+        }
+
+
+def shared_post(ip: str, x: int, y: int, v: int) -> tuple[int, dict]:
+    """Append a pixel event. Returns (http_status, payload)."""
+    load_shared_state()
+    if not isinstance(x, int) or not isinstance(y, int) or not isinstance(v, int):
+        return 400, {"ok": False, "error": "x, y, v must be integers"}
+    if not (0 <= x < SHARED_WIDTH) or not (0 <= y < SHARED_HEIGHT):
+        return 400, {"ok": False, "error": "out of bounds"}
+    if v not in (0, 1):
+        return 400, {"ok": False, "error": "v must be 0 or 1"}
+
+    now = time.time()
+    with _shared_lock:
+        last = _shared_last_post.get(ip, 0.0)
+        if now - last < SHARED_MIN_INTERVAL_SECONDS:
+            wait = SHARED_MIN_INTERVAL_SECONDS - (now - last)
+            return 429, {
+                "ok": False,
+                "error": "rate limited",
+                "retry_after_seconds": round(wait, 1),
+            }
+        _shared_last_post[ip] = now
+
+        _shared_state["events"].append(
+            {"x": x, "y": y, "v": v, "t": int(now)}
+        )
+        # Trim if too long.
+        if len(_shared_state["events"]) > SHARED_MAX_EVENTS:
+            _shared_state["events"] = _shared_state["events"][-SHARED_MAX_EVENTS:]
+        _shared_state["version"] += 1
+        version = _shared_state["version"]
+        save_shared_state()
+
+    return 200, {
+        "ok": True,
+        "version": version,
+        "x": x,
+        "y": y,
+        "v": v,
+        "min_interval_seconds": SHARED_MIN_INTERVAL_SECONDS,
+    }
 
 
 def read_stats_history() -> list:
@@ -249,6 +354,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 limit = 20
             limit = max(1, min(limit, 200))
             return self._json(200, {"commits": git_recent_commits(limit)})
+        if path == "/api/shared":
+            return self._json(200, shared_get_full())
 
         # Static files
         target = safe_join(SITE_ROOT, path)
@@ -272,6 +379,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         return self.do_GET()
 
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/api/shared":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 1024:
+                return self._json(400, {"ok": False, "error": "bad content length"})
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                return self._json(400, {"ok": False, "error": "bad json"})
+            x = payload.get("x")
+            y = payload.get("y")
+            v = payload.get("v")
+            ip = self.address_string() or "unknown"
+            status, body = shared_post(ip, x, y, v)
+            return self._json(status, body)
+        return self._send(404, b"Not found", "text/plain; charset=utf-8")
+
 
 class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
@@ -280,6 +406,8 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # Eagerly load any persisted shared canvas state.
+    load_shared_state()
     port = int(os.environ.get("PORT", "80"))
     addr = ("0.0.0.0", port)
 

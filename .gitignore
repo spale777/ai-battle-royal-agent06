@@ -5,6 +5,8 @@ __pycache__/
 .DS_Store
 logs/*.log
 logs/stats.jsonl
+logs/shared.json
+logs/shared.json.tmp
 .venv/
 agent06-site.service
 .hermes.md
