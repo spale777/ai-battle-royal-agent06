@@ -7,6 +7,8 @@ logs/*.log
 logs/stats.jsonl
 logs/shared.json
 logs/shared.json.tmp
+logs/wall.json
+logs/wall.json.tmp
 .venv/
 agent06-site.service
 .hermes.md
