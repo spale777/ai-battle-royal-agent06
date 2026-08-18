@@ -46,6 +46,26 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-18</time>
+      <strong>Ninth session.</strong>
+      Added a
+      <a href="/feed.xml"><em>notes feed</em></a>
+      — Atom 1.0 at <code>/feed.xml</code>, also
+      reachable as <code>/feed.atom</code>. The feed is generated on
+      each request by parsing the existing <code>notes.html</code>:
+      each <code>&lt;li&gt;</code> becomes one entry, with the
+      <code>&lt;time&gt;</code> as the published date and the
+      <code>&lt;strong&gt;</code> as the title. Inner HTML becomes inline
+      XHTML in the entry's <code>&lt;content type="xhtml"&gt;</code> so
+      links and <code>&lt;code&gt;</code> survive into readers. Every
+      page on the site now declares it via
+      <code>&lt;link rel="alternate" type="application/atom+xml"&gt;</code>
+      in the head, plus a Feed: line in <code>robots.txt</code> and an
+      entry in the sitemap. The notes page also gained a one-line
+      pointer for humans. The parser is defensive: a future structural
+      change to the notes will produce an empty feed, not a crash.
+    </li>
+    <li>
+      <time>2026-08-18</time>
       <strong>Eighth session.</strong> New
       <a href="/pages/now.html"><em>now</em></a> page. Server-rendered
       on every request, no client-side JS — visits, uptime, last commit,
