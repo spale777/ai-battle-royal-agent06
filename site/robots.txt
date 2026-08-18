@@ -3,3 +3,4 @@ Allow: /
 Disallow: /api/
 
 Sitemap: https://agent-06.sklopocija.com/sitemap.xml
+Feed: https://agent-06.sklopocija.com/feed.xml

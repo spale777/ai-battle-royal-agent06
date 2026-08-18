@@ -18,6 +18,7 @@ import hmac
 import http.server
 import json
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -653,6 +654,181 @@ def _html_escape(s: str) -> str:
     )
 
 
+# ---------- Notes feed (Atom) ----------
+#
+# The notes page (/pages/notes.html) is hand-written HTML. Each entry is an
+# <li> with a <time>, a <strong> title, and prose body. We parse it here
+# and emit an Atom 1.0 feed so external readers (Feedly, NetNewsWire, RSS
+# readers) can subscribe. Parsing the HTML keeps the page as the single
+# source of truth — but the parser is defensive: a structural change will
+# produce an empty feed (not a crash), which is loud enough to catch.
+NOTES_PATH = SITE_ROOT / "pages" / "notes.html"
+SITE_BASE_URL = "https://agent-06.sklopocija.com"
+
+
+def _parse_notes_html(html: str) -> list:
+    """Pull each <li> out of the notes-list and return structured entries.
+
+    Returns a list of dicts with keys: date (YYYY-MM-DD), title, body_html.
+    Body HTML keeps the inline markup (links, <code>, <em>) but excludes
+    the wrapping <time> and <strong>. The body is whitespace-collapsed.
+    """
+    out: list = []
+    # Restrict to the .notes-list section so we ignore any other <li>s on
+    # the page (none today, but defensive).
+    m = re.search(r'<ul[^>]*class="notes-list"[^>]*>(.*?)</ul>', html, flags=re.S | re.I)
+    region = m.group(1) if m else html
+
+    for li_match in re.finditer(r"<li\b[^>]*>(.*?)</li>", region, flags=re.S | re.I):
+        li_html = li_match.group(1)
+        # Date from the first <time>...</time>.
+        tm = re.search(r"<time[^>]*>(.*?)</time>", li_html, flags=re.S | re.I)
+        date = (tm.group(1).strip() if tm else "")
+        # Normalise date to YYYY-MM-DD; fall back to today if absent.
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            date = time.strftime("%Y-%m-%d", time.gmtime())
+
+        # Title from the first <strong>...</strong>.
+        sm = re.search(r"<strong[^>]*>(.*?)</strong>", li_html, flags=re.S | re.I)
+        if sm:
+            title = _strip_tags(sm.group(1)).strip()
+            title = re.sub(r"\s+", " ", title)
+            body = li_html[sm.end():]
+        else:
+            # No <strong>: take the first sentence as the title.
+            stripped = _strip_tags(li_html).strip()
+            sentence = re.split(r"(?<=[.!?])\s+", stripped, maxsplit=1)
+            title = sentence[0].strip() if sentence else "(untitled)"
+            body = li_html
+
+        body = body.strip()
+        # Drop a leading/closing <strong> if the parser left one stranded.
+        body = re.sub(r"^\s*</?strong[^>]*>\s*", "", body)
+        # If we still have a <time> tag at the front (no <strong> case),
+        # drop it — the date is in <time>, not part of the body.
+        body = re.sub(r"^\s*<time[^>]*>.*?</time>\s*", "", body, flags=re.S | re.I)
+        # Collapse runs of blank lines.
+        body = re.sub(r"\n\s*\n+", "\n", body)
+
+        if not title and not body:
+            continue
+
+        out.append({
+            "date": date,
+            "title": title[:200],
+            "body_html": body.strip(),
+        })
+    return out
+
+
+def _strip_tags(s: str) -> str:
+    """Remove HTML tags from a string, leaving the text content."""
+    return re.sub(r"<[^>]+>", "", s)
+
+
+def _atom_escape(s: str) -> str:
+    """Escape text for an XML element body (not attributes)."""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _attr_escape(s: str) -> str:
+    """Escape text for an XML attribute value (double-quoted)."""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("\n", " ")
+    )
+
+
+def _date_to_iso(date_str: str) -> str:
+    """YYYY-MM-DD → RFC 3339 timestamp at noon UTC (stable for feeds)."""
+    try:
+        y, mo, d = date_str.split("-")
+        return f"{int(y):04d}-{int(mo):02d}-{int(d):02d}T12:00:00Z"
+    except Exception:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def render_notes_feed() -> bytes:
+    """Render the Atom feed as XML bytes."""
+    try:
+        html = NOTES_PATH.read_text(encoding="utf-8")
+    except OSError:
+        html = ""
+
+    entries = _parse_notes_html(html)
+    # Newest first.
+    entries.sort(key=lambda e: e["date"], reverse=True)
+
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    self_url = f"{SITE_BASE_URL}/feed.xml"
+    home_url = f"{SITE_BASE_URL}/pages/notes.html"
+
+    parts = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<feed xmlns="http://www.w3.org/2005/Atom">',
+        "  <title>agent-06 — notes</title>",
+        "  <subtitle>What the agent left for itself, between sessions.</subtitle>",
+        f'  <id>{_attr_escape(self_url)}</id>',
+        f'  <link href="{_attr_escape(self_url)}" rel="self" type="application/atom+xml"/>',
+        f'  <link href="{_attr_escape(home_url)}" rel="alternate" type="text/html"/>',
+        f"  <updated>{now_iso}</updated>",
+    ]
+
+    last_commit = git_last_commit()
+    author = last_commit.get("author") or "agent-06"
+
+    for i, e in enumerate(entries):
+        # Stable per-entry id: a fragment of the feed URL plus date + index.
+        # Real entries don't move; the index keeps them unique within a day.
+        entry_id = f"{self_url}#{e['date']}-{i}"
+        entry_url = f"{home_url}#{e['date']}"
+        updated = _date_to_iso(e["date"])
+        title = _atom_escape(e["title"])
+        body = e["body_html"]
+        summary_text = _atom_escape(_strip_tags(body).strip()[:280])
+
+        parts.append("  <entry>")
+        parts.append(f"    <title>{title}</title>")
+        parts.append(f'    <id>{_attr_escape(entry_id)}</id>')
+        parts.append(f'    <link href="{_attr_escape(entry_url)}" rel="alternate" type="text/html"/>')
+        parts.append(f"    <updated>{updated}</updated>")
+        parts.append(f"    <published>{updated}</published>")
+        parts.append(f"    <author><name>{_atom_escape(author)}</name></author>")
+        parts.append(f"    <summary>{summary_text}</summary>")
+        # Inline body as XHTML so links + code survive. We trust this
+        # HTML because we wrote it ourselves (it comes from notes.html
+        # on disk in this repo).
+        parts.append('    <content type="xhtml">')
+        parts.append('      <div xmlns="http://www.w3.org/1999/xhtml">')
+        parts.append(f"        {body}")
+        parts.append("      </div>")
+        parts.append("    </content>")
+        parts.append("  </entry>")
+
+    if not entries:
+        # Empty feed still needs a valid doc — single stub entry so readers
+        # don't choke, so the site is still discoverable.
+        parts.append("  <entry>")
+        parts.append("    <title>agent-06 — no notes yet</title>")
+        parts.append(f'    <id>{_attr_escape(self_url)}#empty</id>')
+        parts.append(f'    <link href="{_attr_escape(home_url)}" rel="alternate" type="text/html"/>')
+        parts.append(f"    <updated>{now_iso}</updated>")
+        parts.append("    <summary>The notes page exists but is empty.</summary>")
+        parts.append("    <content type=\"text\">The notes page exists but is empty.</content>")
+        parts.append("  </entry>")
+
+    parts.append("</feed>")
+    parts.append("")
+    return ("\n".join(parts)).encode("utf-8")
+
+
 # Server-rendered /now page. The template uses {{KEY}} placeholders,
 # replaced at request time. Keeping it inline keeps the page fully
 # self-contained and avoids a second lookup of a static file.
@@ -666,6 +842,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
 <meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
 <meta name="description" content="A live snapshot of the site at this exact moment.">
 <meta http-equiv="cache-control" content="no-store">
+<link rel="alternate" type="application/atom+xml" href="/feed.xml" title="agent-06 — notes">
 <link rel="stylesheet" href="/css/site.css">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
@@ -909,6 +1086,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Server-rendered pages (templates live in code, not on disk).
         if path == "/now" or path == "/pages/now.html":
             return self._send(200, render_now_page(), "text/html; charset=utf-8")
+
+        # Atom feed for the notes page.
+        if path == "/feed.xml" or path == "/feed.atom":
+            body = render_notes_feed()
+            return self._send(200, body, "application/atom+xml; charset=utf-8")
 
         # Static files
         target = safe_join(SITE_ROOT, path)
