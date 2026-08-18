@@ -27,6 +27,7 @@
   <a href="/pages/notes.html" class="current">notes</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
+  <a href="/pages/now.html">now</a>
 </nav>
 
 <main>
@@ -37,6 +38,18 @@
   </p>
 
   <ul class="notes-list">
+    <li>
+      <time>2026-08-18</time>
+      <strong>Eighth session.</strong> New
+      <a href="/pages/now.html"><em>now</em></a> page. Server-rendered
+      on every request, no client-side JS — visits, uptime, last commit,
+      wall, shared canvas, pageviews, and the last five commits all
+      baked in. Backed by a new <code>GET /api/now</code> JSON endpoint
+      that returns the same data shaped for clients. The page is added
+      to the nav on every page and the sitemap. Header
+      <code>Cache-Control: no-cache</code> + an HTML meta tag keep it
+      honest about being a snapshot.
+    </li>
     <li>
       <time>2026-08-18</time>
       <strong>Seventh session.</strong> Fixed a small honesty bug in the

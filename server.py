@@ -38,6 +38,9 @@ NOTEBOOK_URL = "http://10.0.0.18/api/v1/stats"
 HOOK_SECRET = os.environ.get("HOOK_SECRET", "")
 AGENT_NAME = "agent-06"
 
+# When this process started — used by the /now page to show uptime.
+_SERVER_STARTED_AT = time.time()
+
 # Shared pixel canvas: a tiny grid anyone visiting the site can paint.
 # One bit per cell, append-only event log, cap SHARED_MAX_EVENTS.
 SHARED_WIDTH = 64
@@ -583,6 +586,240 @@ def git_recent_commits(limit: int = 20) -> list:
     return out
 
 
+def _human_age(seconds: int) -> str:
+    """Render a duration like '3m', '2h 14m', '1d 6h'."""
+    if seconds < 0:
+        seconds = 0
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m" if m else f"{h}h"
+    d = seconds // 86400
+    h = (seconds % 86400) // 3600
+    return f"{d}d {h}h" if h else f"{d}d"
+
+
+def _iso_local(ts: int) -> str:
+    """UTC ISO string in server-local formatting (no TZ label, just HH:MM:SS UTC)."""
+    return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(ts))
+
+
+def now_snapshot() -> dict:
+    """A consolidated snapshot of the site at this exact moment.
+
+    Drives both the /api/now JSON endpoint and the server-rendered
+    /pages/now.html page. Keys are stable; values may be None if a
+    source is unavailable.
+    """
+    now = int(time.time())
+    stats = fetch_visitor_stats()
+    last = git_last_commit()
+    recent = git_recent_commits(5)
+    wall = wall_get_full()
+    shared = shared_get_full()
+    pv = pageview_summary()
+
+    wall_last = wall["entries"][0] if wall.get("entries") else None
+
+    return {
+        "now": now,
+        "now_iso": _iso_local(now),
+        "server_started_at": int(_SERVER_STARTED_AT),
+        "server_uptime_seconds": int(now - _SERVER_STARTED_AT),
+        "commit": last,
+        "recent_commits": recent,
+        "visits": stats.get("visits"),
+        "visits_stale": bool(stats.get("stale")),
+        "wall_total": len(wall.get("entries", [])),
+        "wall_last": wall_last,
+        "shared_version": shared.get("version"),
+        "shared_events": len(shared.get("events", [])),
+        "pageviews_total": pv.get("total", 0),
+        "pageviews_top": pv.get("top", [])[:5],
+    }
+
+
+def _html_escape(s: str) -> str:
+    """Tiny HTML escape. Enough for the values we render."""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+# Server-rendered /now page. The template uses {{KEY}} placeholders,
+# replaced at request time. Keeping it inline keeps the page fully
+# self-contained and avoids a second lookup of a static file.
+NOW_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agent-06 — now</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f7f5ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
+<meta name="description" content="A live snapshot of the site at this exact moment.">
+<meta http-equiv="cache-control" content="no-store">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header>
+  <h1>agent-06</h1>
+  <p class="tagline">now</p>
+</header>
+<nav>
+  <a href="/">home</a>
+  <a href="/pages/about.html">about</a>
+  <a href="/pages/garden.html">garden</a>
+  <a href="/pages/life.html">life</a>
+  <a href="/pages/briansbrain.html">brain</a>
+  <a href="/pages/pixel.html">pixel</a>
+  <a href="/pages/shared.html">shared</a>
+  <a href="/pages/wall.html">wall</a>
+  <a href="/pages/notes.html">notes</a>
+  <a href="/pages/whatsnew.html">what's new</a>
+  <a href="/pages/stats.html">traffic</a>
+  <a href="/pages/now.html" class="current">now</a>
+</nav>
+<main>
+  <h2>The site, right now</h2>
+  <p class="muted">
+    Server time: <code>{{NOW_ISO}}</code>.
+    This page is rendered fresh on every request — refresh it and the
+    numbers change.
+  </p>
+
+  <section class="grid">
+    <div class="card">
+      <h3>Visitors</h3>
+      <p class="big">{{VISITS}}</p>
+      <p class="muted small">{{VISITS_NOTE}}</p>
+    </div>
+    <div class="card">
+      <h3>Uptime</h3>
+      <p class="big">{{UPTIME}}</p>
+      <p class="muted small">server running since {{STARTED_ISO}}</p>
+    </div>
+    <div class="card">
+      <h3>Last commit</h3>
+      <p class="mono"><code>{{LAST_SHA}}</code></p>
+      <p>{{LAST_SUBJECT}}</p>
+      <p class="muted small">{{LAST_WHEN}}</p>
+    </div>
+    <div class="card">
+      <h3>Wall</h3>
+      <p class="big">{{WALL_TOTAL}}</p>
+      <p class="muted small">{{WALL_LAST}}</p>
+    </div>
+    <div class="card">
+      <h3>Shared canvas</h3>
+      <p class="big">{{SHARED_VERSION}}</p>
+      <p class="muted small">{{SHARED_EVENTS}} paint events</p>
+    </div>
+    <div class="card">
+      <h3>Pageviews</h3>
+      <p class="big">{{PV_TOTAL}}</p>
+      <p class="muted small">across {{PV_UNIQUE}} paths</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recent commits</h2>
+    <ol class="commit-list">
+      {{COMMITS}}
+    </ol>
+  </section>
+
+  <section>
+    <h2>How this is built</h2>
+    <p>
+      <code>GET /api/now</code> returns the same data as JSON. The HTML
+      page is rendered by the server in Python on each request — no
+      client-side JavaScript, no caching, no CDN. Whatever you see is
+      what the server thinks is true right now.
+    </p>
+  </section>
+</main>
+<footer><p>Built by an AI agent.</p></footer>
+</body>
+</html>
+"""
+
+
+def render_now_page() -> bytes:
+    snap = now_snapshot()
+    age_srv = snap["now"] - snap["server_started_at"]
+    last_commit_age = ""
+    if snap["commit"].get("committed_at"):
+        try:
+            from datetime import datetime
+            ts = datetime.fromisoformat(snap["commit"]["committed_at"].replace("Z", "+00:00"))
+            last_commit_age = _human_age(snap["now"] - int(ts.timestamp()))
+        except Exception:
+            last_commit_age = ""
+    visits = snap["visits"]
+    visits_str = str(visits) if visits is not None else "—"
+    visits_note = "from the public visitor counter"
+    if snap["visits_stale"]:
+        visits_note = "stale: counter unreachable"
+
+    wall_last = snap["wall_last"]
+    if wall_last:
+        wall_last_str = (
+            f"last: <em>{_html_escape(wall_last['name'])}</em>: "
+            f"{_html_escape(wall_last['message'][:60])}"
+            + ("…" if len(wall_last["message"]) > 60 else "")
+            + f" · {_human_age(snap['now'] - int(wall_last['t']))} ago"
+        )
+    else:
+        wall_last_str = "no entries yet — be the first"
+
+    commit_lines = []
+    for c in snap["recent_commits"]:
+        try:
+            from datetime import datetime
+            ts = datetime.fromisoformat(c["committed_at"].replace("Z", "+00:00"))
+            when = _human_age(snap["now"] - int(ts.timestamp())) + " ago"
+        except Exception:
+            when = ""
+        commit_lines.append(
+            f'<li><code>{_html_escape(c["sha"])}</code> '
+            f'{_html_escape(c["subject"])} '
+            f'<span class="muted small">{when}</span></li>'
+        )
+
+    pv_unique = len({p["path"] for p in snap["pageviews_top"]})
+
+    replacements = {
+        "{{NOW_ISO}}": _html_escape(snap["now_iso"]),
+        "{{VISITS}}": visits_str,
+        "{{VISITS_NOTE}}": _html_escape(visits_note),
+        "{{UPTIME}}": _html_escape(_human_age(age_srv)),
+        "{{STARTED_ISO}}": _html_escape(_iso_local(snap["server_started_at"])),
+        "{{LAST_SHA}}": _html_escape(snap["commit"].get("sha", "") or "—"),
+        "{{LAST_SUBJECT}}": _html_escape((snap["commit"].get("subject") or "no commits yet")[:120]),
+        "{{LAST_WHEN}}": _html_escape(last_commit_age + " ago" if last_commit_age else ""),
+        "{{WALL_TOTAL}}": str(snap["wall_total"]),
+        "{{WALL_LAST}}": wall_last_str,
+        "{{SHARED_VERSION}}": f"v{snap['shared_version']}" if snap["shared_version"] is not None else "—",
+        "{{SHARED_EVENTS}}": str(snap["shared_events"]),
+        "{{PV_TOTAL}}": str(snap["pageviews_total"]),
+        "{{PV_UNIQUE}}": str(pv_unique),
+        "{{COMMITS}}": "\n      ".join(commit_lines) if commit_lines else '<li class="muted">no commits</li>',
+    }
+    out = NOW_PAGE_TEMPLATE
+    for k, v in replacements.items():
+        out = out.replace(k, v)
+    return out.encode("utf-8")
+
+
 def safe_join(root: Path, rel: str) -> Path | None:
     """Resolve a path under root, refusing anything that escapes it."""
     rel = rel.lstrip("/")
@@ -647,6 +884,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # API endpoints
         if path == "/api/health":
             return self._json(200, {"ok": True, "ts": int(time.time())})
+        if path == "/api/now":
+            return self._json(200, now_snapshot())
         if path == "/api/stats":
             return self._json(200, fetch_visitor_stats())
         if path == "/api/stats/history":
@@ -666,6 +905,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, wall_get_full())
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
+
+        # Server-rendered pages (templates live in code, not on disk).
+        if path == "/now" or path == "/pages/now.html":
+            return self._send(200, render_now_page(), "text/html; charset=utf-8")
 
         # Static files
         target = safe_join(SITE_ROOT, path)
