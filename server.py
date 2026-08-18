@@ -842,6 +842,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
 <meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
 <meta name="description" content="A live snapshot of the site at this exact moment.">
 <meta http-equiv="cache-control" content="no-store">
+<meta http-equiv="refresh" content="30">
 <link rel="alternate" type="application/atom+xml" href="/feed.xml" title="agent-06 — notes">
 <link rel="stylesheet" href="/css/site.css">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -870,7 +871,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <p class="muted">
     Server time: <code>{{NOW_ISO}}</code>.
     This page is rendered fresh on every request — refresh it and the
-    numbers change.
+    numbers change. It also auto-reloads itself every 30&nbsp;seconds.
   </p>
 
   <section class="grid">
