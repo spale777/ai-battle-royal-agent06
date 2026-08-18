@@ -46,6 +46,13 @@ SHARED_PATH = LOG_DIR / "shared.json"
 SHARED_MAX_EVENTS = 10000
 SHARED_MIN_INTERVAL_SECONDS = 5  # per-IP rate limit
 
+# Wall (guestbook): short messages from visitors, capped + rate-limited.
+WALL_PATH = LOG_DIR / "wall.json"
+WALL_MAX_ENTRIES = 200
+WALL_MAX_NAME = 24
+WALL_MAX_MESSAGE = 140
+WALL_MIN_INTERVAL_SECONDS = 30  # per-IP cooldown
+
 _shared_lock = threading.Lock()
 _shared_state: dict = {
     "version": 0,
@@ -53,6 +60,13 @@ _shared_state: dict = {
     "loaded": False,
 }
 _shared_last_post: dict[str, float] = {}
+
+_wall_lock = threading.Lock()
+_wall_state: dict = {
+    "entries": [],  # list of {"name": str, "message": str, "t": int}
+    "loaded": False,
+}
+_wall_last_post: dict[str, float] = {}
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -235,6 +249,110 @@ def shared_post(ip: str, x: int, y: int, v: int) -> tuple[int, dict]:
         "y": y,
         "v": v,
         "min_interval_seconds": SHARED_MIN_INTERVAL_SECONDS,
+    }
+
+
+def _clean_wall_text(s: str) -> str:
+    """Normalize a wall field: strip control chars, collapse whitespace, trim."""
+    if not isinstance(s, str):
+        return ""
+    # Remove control characters except newlines and tabs.
+    out = []
+    for ch in s:
+        if ord(ch) < 32 and ch not in ("\n", "\t"):
+            continue
+        out.append(ch)
+    s = "".join(out)
+    # Cap line length to keep things sane on long pastes.
+    s = "\n".join(line.strip()[:WALL_MAX_MESSAGE] for line in s.splitlines())
+    return s.strip()
+
+
+def load_wall_state() -> None:
+    """Load persisted wall entries from disk if not already loaded."""
+    with _wall_lock:
+        if _wall_state["loaded"]:
+            return
+        if WALL_PATH.exists():
+            try:
+                raw = WALL_PATH.read_text(encoding="utf-8")
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get("entries"), list):
+                    cleaned = []
+                    for entry in obj["entries"][-WALL_MAX_ENTRIES:]:
+                        if not isinstance(entry, dict):
+                            continue
+                        name = _clean_wall_text(str(entry.get("name", "") or ""))[:WALL_MAX_NAME]
+                        message = _clean_wall_text(str(entry.get("message", "") or ""))[:WALL_MAX_MESSAGE]
+                        t = entry.get("t")
+                        if not message or not isinstance(t, (int, float)):
+                            continue
+                        cleaned.append({
+                            "name": name or "anonymous",
+                            "message": message,
+                            "t": int(t),
+                        })
+                    _wall_state["entries"] = cleaned
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        _wall_state["loaded"] = True
+
+
+def save_wall_state() -> None:
+    """Persist wall entries. Caller must hold _wall_lock."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = WALL_PATH.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps({"entries": _wall_state["entries"]}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(tmp, WALL_PATH)
+    except OSError:
+        pass
+
+
+def wall_get_full() -> dict:
+    """Return all entries, newest first."""
+    load_wall_state()
+    with _wall_lock:
+        return {"entries": list(reversed(_wall_state["entries"]))}
+
+
+def wall_post(ip: str, name: str, message: str) -> tuple[int, dict]:
+    """Append a wall entry. Returns (http_status, payload)."""
+    load_wall_state()
+    name = _clean_wall_text(name)[:WALL_MAX_NAME]
+    message = _clean_wall_text(message)[:WALL_MAX_MESSAGE]
+    if not message:
+        return 400, {"ok": False, "error": "message required"}
+    if not name:
+        name = "anonymous"
+
+    now = time.time()
+    with _wall_lock:
+        last = _wall_last_post.get(ip, 0.0)
+        if now - last < WALL_MIN_INTERVAL_SECONDS:
+            wait = WALL_MIN_INTERVAL_SECONDS - (now - last)
+            return 429, {
+                "ok": False,
+                "error": "rate limited",
+                "retry_after_seconds": round(wait, 1),
+            }
+        _wall_last_post[ip] = now
+
+        entry = {"name": name, "message": message, "t": int(now)}
+        _wall_state["entries"].append(entry)
+        if len(_wall_state["entries"]) > WALL_MAX_ENTRIES:
+            _wall_state["entries"] = _wall_state["entries"][-WALL_MAX_ENTRIES:]
+        save_wall_state()
+
+    return 200, {
+        "ok": True,
+        "name": name,
+        "message": message,
+        "t": entry["t"],
+        "min_interval_seconds": WALL_MIN_INTERVAL_SECONDS,
     }
 
 
@@ -544,6 +662,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, {"commits": git_recent_commits(limit)})
         if path == "/api/shared":
             return self._json(200, shared_get_full())
+        if path == "/api/wall":
+            return self._json(200, wall_get_full())
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
 
@@ -586,6 +706,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ip = self.address_string() or "unknown"
             status, body = shared_post(ip, x, y, v)
             return self._json(status, body)
+        if path == "/api/wall":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length <= 0 or length > 1024:
+                return self._json(400, {"ok": False, "error": "bad content length"})
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                return self._json(400, {"ok": False, "error": "bad json"})
+            name = payload.get("name", "")
+            message = payload.get("message", "")
+            ip = self.address_string() or "unknown"
+            status, body = wall_post(ip, name, message)
+            return self._json(status, body)
         return self._serve_404(path)
 
 
@@ -596,8 +730,9 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    # Eagerly load any persisted shared canvas state.
+    # Eagerly load any persisted shared canvas + wall state.
     load_shared_state()
+    load_wall_state()
     port = int(os.environ.get("PORT", "80"))
     addr = ("0.0.0.0", port)
 

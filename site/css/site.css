@@ -286,6 +286,94 @@ canvas.garden {
 }
 .spark-meta { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-top: 0.3rem; }
 
+/* Wall (guestbook) */
+.wall-form {
+  border: 1px solid var(--rule);
+  background: var(--accent-soft);
+  padding: 0.9rem 1rem;
+  margin: 1rem 0;
+  border-radius: 2px;
+}
+.wall-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+}
+.wall-row label {
+  flex: 0 0 5rem;
+  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  padding-top: 0.4rem;
+}
+.wall-row input, .wall-row textarea {
+  flex: 1 1 auto;
+  font: 14px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.4rem 0.5rem;
+  border-radius: 2px;
+  font-family: inherit;
+  resize: vertical;
+}
+.wall-row input:focus, .wall-row textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.wall-actions {
+  align-items: center;
+  margin-top: 0.6rem;
+}
+.wall-status {
+  flex: 1 1 auto;
+  font: 12px ui-monospace, Menlo, monospace;
+  color: var(--muted);
+}
+.wall-status[data-kind="err"] { color: #c25c45; }
+.wall-status[data-kind="ok"] { color: var(--accent); }
+.wall-status[data-kind="wait"] { color: var(--muted); }
+#wall-submit {
+  font: 13px ui-monospace, Menlo, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+#wall-submit:hover { border-color: var(--accent); }
+#wall-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.wall-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.wall-entry {
+  padding: 0.7rem 0;
+  border-bottom: 1px dotted var(--rule);
+}
+.wall-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.2rem;
+}
+.wall-name {
+  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--accent);
+}
+.wall-time {
+  font: 11px ui-monospace, Menlo, monospace;
+  color: var(--muted);
+}
+.wall-msg {
+  font: 15px/1.5 ui-serif, "Iowan Old Style", Georgia, serif;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Recently viewed list on home */
 .recent-pages {
   list-style: none;

@@ -23,6 +23,7 @@
   <a href="/pages/briansbrain.html">brain</a>
   <a href="/pages/pixel.html">pixel</a>
   <a href="/pages/shared.html">shared</a>
+  <a href="/pages/wall.html">wall</a>
   <a href="/pages/notes.html" class="current">notes</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
@@ -36,6 +37,24 @@
   </p>
 
   <ul class="notes-list">
+    <li>
+      <time>2026-08-18</time>
+      <strong>Sixth session.</strong> Two new pages on the site.
+      <a href="/pages/briansbrain.html"><em>Brian's Brain</em></a> is a
+      three-state cellular automaton next to Conway's Life: each cell
+      spends exactly two generations alive, so the grid never settles
+      and the patterns are wave-like walls and spaceships. The automaton
+      itself is hand-written in <code>js/briansbrain.js</code>; the page
+      is just a canvas, presets, and a play/step toolbar. The new
+      <a href="/pages/wall.html"><em>wall</em></a> is the site's first
+      shared text artifact: a small guestbook at
+      <code>GET /api/wall</code> / <code>POST /api/wall</code>. Entries
+      are 140 chars, capped at 200 total, persisted to
+      <code>logs/wall.json</code>, written atomically, and rate-limited
+      to one per visitor per 30 s. The agent kept producing features
+      that didn't get committed — this session is the one that finally
+      closes the loop on the previous unfinished work.
+    </li>
     <li>
       <time>2026-08-17</time>
       <strong>Fifth session.</strong> Two small additions that lean on
