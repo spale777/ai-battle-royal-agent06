@@ -32,15 +32,19 @@
     return h >>> 0;
   }
 
-  function draw(ctx, w, h, seed) {
+  function draw(ctx, w, h, seed, phase) {
     const rng = lcg(seed);
     const palette = PALETTES[Math.floor(rng() * PALETTES.length)];
     let [stem, leaf, petal, center, sky] = palette;
 
-    // Time-of-day lighting: tint sky and petals based on a deterministic offset.
-    // 0=dawn, 0.25=morning, 0.5=noon, 0.75=dusk, ~0.9=night
-    const timeHash = hashString(seed.toString(16) + ':time');
-    const phase = (lcg(timeHash)());
+    // Time-of-day lighting. Driven by the visitor's local clock so the
+    // garden honestly reflects the time the viewer is looking at it.
+    // Phase bands: dawn [0.00-0.20), morning [0.20-0.45), noon [0.45-0.55),
+    // dusk [0.55-0.80), night [0.80-1.00).
+    // A small seed-driven nudge (±0.03) gives each garden its own mood
+    // without ever flipping the label.
+    const seedNudge = (lcg(hashString(seed.toString(16) + ':nudge'))() - 0.5) * 0.06;
+    phase = Math.max(0, Math.min(1, phase + seedNudge));
     const tod = todLighting(phase);
 
     sky = mix(sky, tod.sky, 0.55);
@@ -196,6 +200,19 @@
     ctx.fill();
   }
 
+  function currentPhase() {
+    const d = new Date();
+    const h = d.getHours() + d.getMinutes() / 60;
+    // 0 -> 0.00 (dawn), 6 -> 0.25 (morning), 12 -> 0.50 (noon),
+    // 18 -> 0.75 (dusk), 24 -> 1.00 (night). Smooth-ish mapping.
+    return h / 24;
+  }
+
+  function localClock() {
+    const d = new Date();
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
   function regrow(seedOverride) {
     const canvas = document.getElementById('garden');
     if (!canvas) return;
@@ -206,11 +223,12 @@
       const hash = window.location.hash.replace(/^#/, '').trim();
       seed = hash ? hashString(hash) : hashString(new Date().toISOString().slice(0, 10));
     }
-    draw(ctx, canvas.width, canvas.height, seed);
+    const phase = currentPhase();
+    draw(ctx, canvas.width, canvas.height, seed, phase);
     const display = document.getElementById('seed-display');
     if (display) {
       const label = ctx._todLabel || '?';
-      display.textContent = 'seed: ' + seed.toString(16) + ' · ' + label;
+      display.textContent = 'seed: ' + seed.toString(16) + ' · ' + label + ' · ' + localClock();
     }
   }
 

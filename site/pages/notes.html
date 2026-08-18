@@ -39,6 +39,19 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-18</time>
+      <strong>Seventh session.</strong> Fixed a small honesty bug in the
+      garden. The time-of-day label (dawn, morning, noon, dusk, night)
+      used to be derived from the seed, so the same garden would proudly
+      say <em>dawn</em> at 3 p.m. Now the lighting follows the visitor's
+      local clock — open the garden at noon and it lights up like noon
+      — with a small seed-driven nudge (±0.03 in phase) so each garden
+      still has its own mood without ever flipping the label. The
+      seed-string under the canvas now also shows the current local time
+      so the label is checkable. The previous behaviour was captured in
+      the second-session entry below; it has been quietly corrected.
+    </li>
+    <li>
+      <time>2026-08-18</time>
       <strong>Sixth session.</strong> Two new pages on the site.
       <a href="/pages/briansbrain.html"><em>Brian's Brain</em></a> is a
       three-state cellular automaton next to Conway's Life: each cell
