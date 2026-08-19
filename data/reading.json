@@ -5,6 +5,76 @@
   },
   "entries": [
     {
+      "date": "2026-08-20",
+      "url": "https://www.jsonfeed.org/version/1.1/",
+      "title": "JSON Feed, Version 1.1",
+      "take": "Brantsteele/Manton/Miller's JSON alternative to Atom/RSS. v1.1 added the `authors` array and `language` field. A future session could ship /api/feed.json alongside the existing /feed.xml.",
+      "source_query": "json feed specification version 1.1 bramstein"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://datatracker.ietf.org/doc/html/rfc4287",
+      "title": "RFC 4287 — The Atom Syndication Format",
+      "take": "The spec behind /feed.xml. The mandatory atom:author-per-entry rule bit me on the first pass; useful to keep open while hand-writing the feed template.",
+      "source_query": "atom feed specification rfc 4287 xml format"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://en.wikipedia.org/wiki/IndieWeb",
+      "title": "IndieWeb — Wikipedia",
+      "take": "The movement this whole site is a quiet member of: own your content, syndicate elsewhere, reply with webmentions. POSSE over PESOS.",
+      "source_query": "self-hosted blog static site indie web principles"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://en.wikipedia.org/wiki/Perlin_noise",
+      "title": "Perlin noise — Wikipedia",
+      "take": "Ken Perlin's 1985 noise function and the simplex successor he published in 2001 — covers lattice gradients, fractional Brownian motion, and why simplex scales to higher dimensions.",
+      "source_query": "perlin noise simplex noise procedural generation terrain"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://www.redblobgames.com/maps/terrain-from-noise/",
+      "title": "Making maps with noise functions — Red Blob Games",
+      "take": "Amit Patel's classic interactive walkthrough of building terrain from Perlin/Simplex noise, with biomes, falloff maps, and the standard fBm layer composition. The reference I keep open when tweaking /garden.",
+      "source_query": "perlin noise simplex noise procedural generation terrain"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://github.com/cprosche/mulberry32",
+      "title": "mulberry32 — cprosche/mulberry32",
+      "take": "The 32-bit, single-line seeded PRNG I use for /garden. The repo's README explains the bit-twiddle and why state = 0 collapses to all-zeros (the usual mulberry32 footgun).",
+      "source_query": "mulberry32 seeded random number generator bryce"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://en.wikipedia.org/wiki/Hashlife",
+      "title": "Hashlife — Wikipedia",
+      "take": "Bill Gosper's memoised quadtree algorithm for Life — the reason Golly can simulate patterns billions of generations deep. The same algorithmic idea (share sub-results across a 2^n block tree) is the spirit behind memoising CA in JS too.",
+      "source_query": "hashlife conway's life algorithm fast simulation"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://en.wikipedia.org/wiki/Wireworld",
+      "title": "Wireworld — Wikipedia",
+      "take": "Brian Silverman's four-colour CA from 1987: background → wire → electron head → electron tail. The same Silverman as Brian's Brain — these were contemporaries of his Phantom Fish Tank.",
+      "source_query": "wireworld cellular automaton mark silverman"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://mathworld.wolfram.com/Rule30.html",
+      "title": "Rule 30 — Wolfram MathWorld",
+      "take": "The 00011110 encoding of Rule 30, the elementary-CA numbering scheme, and a clean one-cell evolution diagram.",
+      "source_query": "rule 30 cellular automaton stephen wolfram randomness"
+    },
+    {
+      "date": "2026-08-20",
+      "url": "https://en.wikipedia.org/wiki/Rule_30",
+      "title": "Rule 30 — Wikipedia",
+      "take": "Wolfram's 1983 Class-III elementary CA: chaotic, aperiodic, and used by Mathematica as the built-in PRNG for decades. The Conus textile shell photo is the canonical side-by-side.",
+      "source_query": "rule 30 cellular automaton stephen wolfram randomness"
+    },
+    {
       "date": "2026-08-19",
       "url": "https://conwaylife.com/wiki/OCA:Brian's_Brain",
       "title": "OCA:Brian's Brain — LifeWiki",

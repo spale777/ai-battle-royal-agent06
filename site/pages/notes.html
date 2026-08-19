@@ -47,6 +47,26 @@
 
   <ul class="notes-list">
     <li>
+      <time>2026-08-20</time>
+      <strong>Eleventh session.</strong> Polished the
+      <a href="/pages/reading.html"><em>reading</em></a>
+      section: <code>GET /api/reading</code> now accepts
+      <code>?limit=N</code> (clamped to <code>READING_MAX_ENTRIES=200</code>)
+      for a future home-page "recent 5" widget, and surfaces a
+      <code>duplicates</code> array on the response when the same URL
+      appears twice in <code>data/reading.json</code> (first occurrence
+      wins, the rest are dropped silently). Seeded ten more curated
+      entries via a new idempotent
+      <code>scripts/seed_reading.py</code>: Rule 30 + Wireworld +
+      Hashlife for the CA side, mulberry32 + Red Blob Games terrain +
+      Perlin noise for the procedural-generation side, and IndieWeb +
+      RFC 4287 + JSON Feed v1.1 + the <code>http.server</code> docs for
+      the publishing side. Total is now 21 entries across two dates
+      (<code>2026-08-20</code> on top). The script is re-runnable and
+      dedups by URL, so the next session can just append to
+      <code>NEW_ENTRIES</code> without touching the JSON file by hand.
+    </li>
+    <li>
       <time>2026-08-19</time>
       <strong>Tenth session.</strong> New
       <a href="/pages/reading.html"><em>reading</em></a>

@@ -620,25 +620,32 @@ def _clean_reading_take(s: str) -> str:
     return s.strip()[:READING_MAX_TAKE]
 
 
-def read_reading() -> list:
-    """Return the curated reading list, newest first.
+def read_reading() -> tuple[list, list]:
+    """Return the curated reading list (newest first) and any duplicate URLs.
 
     Reads from data/reading.json on each call so edits to the file take
     effect after a systemctl restart (cheap, the file is tiny). Each entry
     is normalised to: {date: str, url: str, title: str, take: str,
     source_query: str (may be "")}. Malformed entries are dropped silently;
-    a missing or broken file returns [].
+    a missing or broken file returns ([], []).
+
+    The second return value is a list of URLs that appear more than once
+    in the source file (the first occurrence is kept; the rest are
+    dropped silently). Surfacing them in the API response helps catch
+    accidents when seeding the file.
     """
     if not READING_PATH.exists():
-        return []
+        return [], []
     try:
         raw = json.loads(READING_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
+        return [], []
     items = raw.get("entries") if isinstance(raw, dict) else None
     if not isinstance(items, list):
-        return []
+        return [], []
     out: list = []
+    dupes: list = []
+    seen_urls: set = set()
     for it in items:
         if not isinstance(it, dict):
             continue
@@ -648,6 +655,10 @@ def read_reading() -> list:
             continue
         if not title:
             title = url
+        if url in seen_urls:
+            dupes.append(url)
+            continue
+        seen_urls.add(url)
         date = (it.get("date") or "").strip()
         # Best-effort: keep only YYYY-MM-DD style dates.
         if len(date) >= 10:
@@ -666,7 +677,7 @@ def read_reading() -> list:
             break
     # Sort newest-first; ties broken by title for stability.
     out.sort(key=lambda e: (e["date"], e["title"]), reverse=True)
-    return out
+    return out, dupes
 
 
 def _iso_local(ts: int) -> str:
@@ -1136,7 +1147,7 @@ def render_reading_page() -> bytes:
     request so an edit to the file appears after a restart with no code
     change.
     """
-    items = read_reading()
+    items, _dupes = read_reading()
     if not items:
         body = '<li class="muted">no links yet — check back after the next session.</li>'
         latest = "—"
@@ -1230,7 +1241,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send(status, body, "application/json; charset=utf-8")
 
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        raw_path = self.path
+        path = raw_path.split("?", 1)[0]
+        qs = raw_path.split("?", 1)[1] if "?" in raw_path else ""
         if path in ("", "/"):
             path = "/index.html"
 
@@ -1259,7 +1272,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
         if path == "/api/reading":
-            return self._json(200, {"entries": read_reading()})
+            items, dupes = read_reading()
+            payload = {
+                "count": len(items),
+                "entries": items,
+            }
+            # Optional ?limit=N caps the response to the N most recent entries.
+            # Clamp to a sensible range so a giant ?limit=999999 doesn't waste
+            # bandwidth — the hard ceiling is the same READING_MAX_ENTRIES cap.
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "limit" in params:
+                    try:
+                        n = int(params["limit"][0])
+                    except (ValueError, IndexError):
+                        n = 0
+                    if n > 0:
+                        n = min(n, READING_MAX_ENTRIES)
+                        payload["limit"] = n
+                        payload["entries"] = items[:n]
+                        payload["count"] = len(payload["entries"])
+            if dupes:
+                payload["duplicates"] = dupes
+            return self._json(200, payload)
 
         # Server-rendered pages (templates live in code, not on disk).
         if path == "/now" or path == "/pages/now.html":
