@@ -19,6 +19,7 @@ import http.server
 import json
 import os
 import re
+import secrets
 import socketserver
 import subprocess
 import sys
@@ -79,6 +80,22 @@ _wall_state: dict = {
     "loaded": False,
 }
 _wall_last_post: dict[str, float] = {}
+
+# Guessing game (1..100). Player submits guesses; server says higher/lower.
+# Sessions are persisted to disk so a page reload and a server restart
+# don't lose game state. Cap of GUESSING_MAX_SESSIONS evicts the oldest
+# non-active sessions on the next create call.
+GUESSING_PATH = LOG_DIR / "guessing.json"
+GUESSING_MAX_SESSIONS = 5000
+GUESSING_MIN = 1
+GUESSING_MAX = 100
+GUESSING_BUDGET = 7  # number of guesses per game (binary search max ~7)
+
+_guessing_lock = threading.Lock()
+_guessing_state: dict = {
+    "sessions": {},   # uuid -> {secret, history, status, created, last_t}
+    "loaded": False,
+}
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -366,6 +383,306 @@ def wall_post(ip: str, name: str, message: str) -> tuple[int, dict]:
         "t": entry["t"],
         "min_interval_seconds": WALL_MIN_INTERVAL_SECONDS,
     }
+
+
+# ---------- Guessing game ----------------------------------------------------
+# A small 1..100 binary-search game. Each visitor gets a session UUID, a
+# fresh secret in [GUESSING_MIN, GUESSING_MAX], and a budget of
+# GUESSING_BUDGET guesses. The server holds the secret and replies with
+# "higher" / "lower" / "correct" / "repeat" / "out" (no guesses left) /
+# "done" (game already over). Sessions persist across page reloads and
+# server restarts via logs/guessing.json.
+
+
+def _is_valid_session_id(sid: str) -> bool:
+    """Reject anything that isn't a plain lowercase 32-hex-char UUID token."""
+    if not isinstance(sid, str) or len(sid) != 32:
+        return False
+    return all(c in "0123456789abcdef" for c in sid)
+
+
+def _guessing_random_int(lo: int, hi: int) -> int:
+    """Inclusive [lo, hi] uniform int, cryptographically sane for our purposes."""
+    return secrets.randbelow(hi - lo + 1) + lo
+
+
+def load_guessing_state() -> None:
+    """Load persisted guessing sessions from disk if not already loaded."""
+    with _guessing_lock:
+        if _guessing_state["loaded"]:
+            return
+        if GUESSING_PATH.exists():
+            try:
+                raw = GUESSING_PATH.read_text(encoding="utf-8")
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get("sessions"), dict):
+                    cleaned: dict = {}
+                    for sid, sess in obj["sessions"].items():
+                        if not _is_valid_session_id(sid) or not isinstance(sess, dict):
+                            continue
+                        try:
+                            secret = int(sess.get("secret"))
+                            history = sess.get("history") or []
+                            status = sess.get("status") or "active"
+                            created = int(sess.get("created") or 0)
+                            last_t = int(sess.get("last_t") or created)
+                        except (TypeError, ValueError):
+                            continue
+                        if not (GUESSING_MIN <= secret <= GUESSING_MAX):
+                            continue
+                        if status not in ("active", "won", "lost", "abandoned"):
+                            status = "active"
+                        # Drop the live history of solved games on cold load —
+                        # they expose no advantage, and we don't reveal the
+                        # secret anyway.
+                        if status != "active":
+                            history = []
+                        sane_history = []
+                        for h in history:
+                            if not isinstance(h, (list, tuple)) or len(h) != 2:
+                                continue
+                            try:
+                                g = int(h[0])
+                                hint = str(h[1])
+                            except (TypeError, ValueError):
+                                continue
+                            if not (GUESSING_MIN <= g <= GUESSING_MAX):
+                                continue
+                            if hint not in ("higher", "lower", "correct"):
+                                continue
+                            sane_history.append([g, hint])
+                        cleaned[sid] = {
+                            "secret": secret,
+                            "history": sane_history,
+                            "status": status,
+                            "created": created,
+                            "last_t": last_t,
+                        }
+                    _guessing_state["sessions"] = cleaned
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        _guessing_state["loaded"] = True
+
+
+def save_guessing_state() -> None:
+    """Persist sessions. Caller must hold _guessing_lock."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = GUESSING_PATH.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps({"sessions": _guessing_state["sessions"]}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(tmp, GUESSING_PATH)
+    except OSError:
+        pass
+
+
+def _guessing_prune_locked() -> None:
+    """Caller must hold _guessing_lock. Drop finished games first, then
+    oldest inactive games if we are still over the cap."""
+    sessions = _guessing_state["sessions"]
+    # Trim any obviously broken entries first (no real need, but cheap).
+    if len(sessions) <= GUESSING_MAX_SESSIONS:
+        return
+    # Drop finished sessions (won / lost / abandoned) first — they're
+    # purely historical and the live page doesn't need them.
+    finished = [sid for sid, s in sessions.items() if s.get("status") != "active"]
+    for sid in sorted(finished, key=lambda k: sessions[k].get("last_t", 0)):
+        if len(sessions) <= GUESSING_MAX_SESSIONS:
+            break
+        sessions.pop(sid, None)
+    if len(sessions) <= GUESSING_MAX_SESSIONS:
+        return
+    # If we're still over, drop oldest active sessions.
+    for sid in sorted(sessions, key=lambda k: sessions[k].get("last_t", 0)):
+        if len(sessions) <= GUESSING_MAX_SESSIONS:
+            break
+        sessions.pop(sid, None)
+
+
+def guessing_create() -> tuple[int, dict]:
+    """Start a new game. Returns (http_status, payload)."""
+    load_guessing_state()
+    now = int(time.time())
+    while True:
+        sid = secrets.token_hex(16)
+        with _guessing_lock:
+            if sid not in _guessing_state["sessions"]:
+                secret = _guessing_random_int(GUESSING_MIN, GUESSING_MAX)
+                _guessing_state["sessions"][sid] = {
+                    "secret": secret,
+                    "history": [],
+                    "status": "active",
+                    "created": now,
+                    "last_t": now,
+                }
+                _guessing_prune_locked()
+                save_guessing_state()
+                break
+    return 200, {
+        "ok": True,
+        "session": sid,
+        "range": [GUESSING_MIN, GUESSING_MAX],
+        "budget": GUESSING_BUDGET,
+        "guesses_left": GUESSING_BUDGET,
+        "history": [],
+        "status": "active",
+        "created": now,
+    }
+
+
+def guessing_state(sid: str) -> tuple[int, dict]:
+    """Read-only view of a session. Never reveals the secret on 'active'."""
+    load_guessing_state()
+    if not _is_valid_session_id(sid):
+        return 400, {"ok": False, "error": "bad session id"}
+    with _guessing_lock:
+        sess = _guessing_state["sessions"].get(sid)
+        if not sess:
+            return 404, {"ok": False, "error": "no such session"}
+        guesses_used = len(sess["history"])
+        guesses_left = GUESSING_BUDGET - guesses_used
+        if sess["status"] == "active" and guesses_left < 0:
+            guesses_left = 0
+        return 200, {
+            "ok": True,
+            "session": sid,
+            "range": [GUESSING_MIN, GUESSING_MAX],
+            "budget": GUESSING_BUDGET,
+            "guesses_used": guesses_used,
+            "guesses_left": guesses_left,
+            "history": list(sess["history"]),
+            "status": sess["status"],
+        }
+
+
+def guessing_guess(sid: str, raw_guess) -> tuple[int, dict]:
+    """Submit a guess for an existing session. Returns (status, payload).
+
+    Outcome strings surfaced to the client:
+      "higher"   — secret is bigger than your guess
+      "lower"    — secret is smaller than your guess
+      "correct"  — game won, secret revealed
+      "out"      — budget exhausted, secret revealed, status -> lost
+      "repeat"   — you've already guessed this number
+      "done"     — game is no longer accepting guesses
+    """
+    load_guessing_state()
+    if not _is_valid_session_id(sid):
+        return 400, {"ok": False, "error": "bad session id"}
+    try:
+        guess = int(raw_guess)
+    except (TypeError, ValueError):
+        return 400, {"ok": False, "error": "guess must be an integer"}
+    if not (GUESSING_MIN <= guess <= GUESSING_MAX):
+        return 400, {
+            "ok": False,
+            "error": f"guess must be in [{GUESSING_MIN}, {GUESSING_MAX}]",
+        }
+    now = int(time.time())
+    with _guessing_lock:
+        sess = _guessing_state["sessions"].get(sid)
+        if not sess:
+            return 404, {"ok": False, "error": "no such session"}
+        if sess["status"] != "active":
+            return 200, {
+                "ok": True,
+                "session": sid,
+                "outcome": "done",
+                "status": sess["status"],
+                "secret": sess["secret"],
+                "guesses_used": len(sess["history"]),
+                "guesses_left": 0,
+                "history": list(sess["history"]),
+                "range": [GUESSING_MIN, GUESSING_MAX],
+                "budget": GUESSING_BUDGET,
+            }
+        # Already guessed?
+        for g, _h in sess["history"]:
+            if g == guess:
+                guesses_used = len(sess["history"])
+                guesses_left = max(0, GUESSING_BUDGET - guesses_used)
+                return 200, {
+                    "ok": True,
+                    "session": sid,
+                    "outcome": "repeat",
+                    "guess": guess,
+                    "guesses_used": guesses_used,
+                    "guesses_left": guesses_left,
+                    "history": list(sess["history"]),
+                    "range": [GUESSING_MIN, GUESSING_MAX],
+                    "budget": GUESSING_BUDGET,
+                }
+        # Determine outcome.
+        secret = sess["secret"]
+        if guess < secret:
+            outcome = "higher"
+        elif guess > secret:
+            outcome = "lower"
+        else:
+            outcome = "correct"
+        sess["history"].append([guess, outcome])
+        sess["last_t"] = now
+        guesses_used = len(sess["history"])
+        guesses_left = GUESSING_BUDGET - guesses_used
+        if outcome == "correct":
+            sess["status"] = "won"
+            guesses_left = GUESSING_BUDGET - guesses_used
+        elif guesses_left < 0:
+            # Belt and braces: actually impossible since we just added one,
+            # but keep the invariant tight.
+            guesses_left = 0
+        payload = {
+            "ok": True,
+            "session": sid,
+            "outcome": outcome,
+            "guess": guess,
+            "guesses_used": guesses_used,
+            "guesses_left": guesses_left,
+            "history": list(sess["history"]),
+            "range": [GUESSING_MIN, GUESSING_MAX],
+            "budget": GUESSING_BUDGET,
+            "status": sess["status"],
+        }
+        if sess["status"] == "active" and guesses_used >= GUESSING_BUDGET:
+            # Burn the last guess — if it wasn't already correct, the
+            # game is now over and the player has lost.
+            if outcome != "correct":
+                sess["status"] = "lost"
+                payload["outcome"] = "out"
+                payload["status"] = "lost"
+                payload["guesses_left"] = 0
+        # Reveal the secret only when the game is decided.
+        if sess["status"] != "active":
+            payload["secret"] = secret
+        _guessing_prune_locked()
+        save_guessing_state()
+        return 200, payload
+
+
+def guessing_abandon(sid: str) -> tuple[int, dict]:
+    """Mark a session abandoned (so prune won't try to keep it forever)."""
+    load_guessing_state()
+    if not _is_valid_session_id(sid):
+        return 400, {"ok": False, "error": "bad session id"}
+    now = int(time.time())
+    with _guessing_lock:
+        sess = _guessing_state["sessions"].get(sid)
+        if not sess:
+            return 404, {"ok": False, "error": "no such session"}
+        if sess["status"] == "active":
+            sess["status"] = "abandoned"
+            sess["last_t"] = now
+            save_guessing_state()
+        return 200, {
+            "ok": True,
+            "session": sid,
+            "status": sess["status"],
+            "secret": sess["secret"],
+            "history": list(sess["history"]),
+            "budget": GUESSING_BUDGET,
+        }
 
 
 def read_stats_history() -> list:
@@ -939,6 +1256,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/wall.html">wall</a>
   <a href="/pages/notes.html">notes</a>
   <a href="/pages/reading.html">reading</a>
+  <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -1106,6 +1424,7 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/wall.html">wall</a>
   <a href="/pages/notes.html">notes</a>
   <a href="/pages/reading.html" class="current">reading</a>
+  <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -1271,6 +1590,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, wall_get_full())
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
+        if path == "/api/guessing":
+            status, body = guessing_create()
+            return self._json(status, body)
+        # /api/guessing/<sid> -> read state
+        if path.startswith("/api/guessing/"):
+            rest = path[len("/api/guessing/"):]
+            # /api/guessing/<sid>          -> state
+            # /api/guessing/<sid>/guess    -> POST only (handled below)
+            # /api/guessing/<sid>/abandon  -> POST only (handled below)
+            if "/" not in rest:
+                status, body = guessing_state(rest)
+                return self._json(status, body)
         if path == "/api/reading":
             items, dupes = read_reading()
             payload = {
@@ -1361,6 +1692,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ip = self.address_string() or "unknown"
             status, body = wall_post(ip, name, message)
             return self._json(status, body)
+        # /api/guessing                       -> handled in GET, mirror for symmetry
+        # /api/guessing/<sid>/guess          -> POST {guess: int}
+        # /api/guessing/<sid>/abandon         -> POST {}
+        if path == "/api/guessing" or path.startswith("/api/guessing/"):
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length < 0 or length > 1024:
+                return self._json(400, {"ok": False, "error": "bad content length"})
+            raw = self.rfile.read(length) if length > 0 else b""
+            try:
+                payload = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                payload = {}
+            rest = path[len("/api/guessing"):]
+            # POST /api/guessing -> create (mirrors GET; rare but cheap)
+            if rest == "":
+                status, body = guessing_create()
+                return self._json(status, body)
+            # /api/guessing/<sid>[/action]
+            if rest.startswith("/"):
+                rest = rest[1:]
+            parts = rest.split("/")
+            if len(parts) == 1:
+                # plain /api/guessing/<sid> -> treat POST as abandon
+                status, body = guessing_abandon(parts[0])
+                return self._json(status, body)
+            if len(parts) == 2 and parts[1] == "guess":
+                guess = payload.get("guess", payload) if isinstance(payload, dict) else payload
+                status, body = guessing_guess(parts[0], guess)
+                return self._json(status, body)
+            if len(parts) == 2 and parts[1] == "abandon":
+                status, body = guessing_abandon(parts[0])
+                return self._json(status, body)
+            return self._json(404, {"ok": False, "error": "no such guessing endpoint"})
         return self._serve_404(path)
 
 
@@ -1371,9 +1735,10 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    # Eagerly load any persisted shared canvas + wall state.
+    # Eagerly load any persisted shared canvas + wall + guessing state.
     load_shared_state()
     load_wall_state()
+    load_guessing_state()
     port = int(os.environ.get("PORT", "80"))
     addr = ("0.0.0.0", port)
 

@@ -9,6 +9,8 @@ logs/shared.json
 logs/shared.json.tmp
 logs/wall.json
 logs/wall.json.tmp
+logs/guessing.json
+logs/guessing.json.tmp
 .venv/
 agent06-site.service
 .hermes.md

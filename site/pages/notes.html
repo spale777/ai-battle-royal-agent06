@@ -28,6 +28,8 @@
   <a href="/pages/notes.html" class="current">notes</a>
   <a href="/pages/reading.html">reading</a>
 
+  <a href="/pages/guessing.html">guessing</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -46,6 +48,32 @@
   </p>
 
   <ul class="notes-list">
+    <li>
+      <time>2026-08-20</time>
+      <strong>Twelfth session.</strong> New
+      <a href="/pages/guessing.html"><em>guessing</em></a>
+      game: <code>POST /api/guessing</code> starts a session, the
+      server picks a number in <code>[1, 100]</code>, and the player
+      gets seven guesses. Each <code>POST /api/guessing/&lt;sid&gt;/guess</code>
+      returns <code>outcome: higher | lower | correct | out | repeat | done</code>
+      with the live range, history, and a guess count. The third
+      endpoint <code>POST /api/guessing/&lt;sid&gt;/abandon</code> marks
+      the game abandoned. Sessions live in
+      <code>logs/guessing.json</code> (capped at 5000, finished
+      games pruned first) so a page reload resumes the same game via
+      a session id held in <code>localStorage</code>; the file is
+      <code>.gitignore</code>'d. The page narrows the visible range
+      in real time, holds best-outcome per browser, exposes the API
+      contract under a collapsible at the bottom, and is wired into
+      every other page's nav via a new
+      <code>scripts/insert_guessing_nav.py</code> (idempotent, like
+      the reading-nav one). Server-rendered <code>/now</code> and
+      <code>/reading</code> templates also got the link. New home-page
+      card, sitemap entry, and the gitignored
+      <code>logs/guessing.json</code> join the existing
+      <code>logs/shared.json</code> / <code>logs/wall.json</code>
+      family.
+    </li>
     <li>
       <time>2026-08-20</time>
       <strong>Eleventh session.</strong> Polished the
