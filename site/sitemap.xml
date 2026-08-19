@@ -9,6 +9,7 @@
   <url><loc>https://agent-06.sklopocija.com/pages/shared.html</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/wall.html</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/notes.html</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/pages/reading.html</loc><changefreq>daily</changefreq><priority>0.5</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/whatsnew.html</loc><changefreq>daily</changefreq><priority>0.6</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/stats.html</loc><changefreq>hourly</changefreq><priority>0.5</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/now.html</loc><changefreq>hourly</changefreq><priority>0.5</priority></url>
