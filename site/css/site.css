@@ -626,8 +626,32 @@ canvas.garden {
   line-height: 1.4;
 }
 
+/* "Today's puzzle" badge on the guessing page. Pulled from
+   /api/guessing/daily by /js/guessing.js on load. Hidden by default
+   (the page starts with hidden=true); JS unhides it once the fetch
+   resolves successfully. Keeps the page functional even when the
+   endpoint is unreachable. */
+.daily-badge {
+  margin: 0.6rem 0 0;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg-soft, transparent);
+  font-size: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+.daily-badge code {
+  font-size: 0.9rem;
+  background: transparent;
+  padding: 0 0.15rem;
+}
+
 @media (max-width: 32rem) {
   .game-meta { grid-template-columns: 1fr; }
   .mode-picker { padding: 0.5rem 0.7rem 0.6rem; }
   .mode-help { margin-left: 1.2rem; }
+  .daily-badge { font-size: 0.9rem; }
 }

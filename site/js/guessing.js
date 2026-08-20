@@ -363,6 +363,33 @@
 
   wireUI();
 
+  // Populate the "today's puzzle" badge from /api/guessing/daily.
+  // The endpoint deliberately omits the secret — all we get is the
+  // day_key, range, and budget. Silent on network failure: the badge
+  // stays hidden and the game keeps working.
+  const $dailyBadge = document.getElementById('daily-badge');
+  const $dailyKey = document.getElementById('daily-day-key');
+  const $dailyRange = document.getElementById('daily-range');
+  const $dailyBudget = document.getElementById('daily-budget');
+  if ($dailyBadge && $dailyKey && $dailyRange && $dailyBudget) {
+    fetch('/api/guessing/daily', { method: 'GET', cache: 'no-store' })
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (info) {
+        if (!info || !info.ok || !info.day_key) return;
+        $dailyKey.textContent = info.day_key;
+        if (Array.isArray(info.range) && info.range.length === 2) {
+          $dailyRange.textContent = info.range[0] + '..' + info.range[1];
+        } else {
+          $dailyRange.textContent = '—';
+        }
+        $dailyBudget.textContent = (info.budget != null) ? String(info.budget) : '—';
+        $dailyBadge.hidden = false;
+      })
+      .catch(function () {
+        /* silent — the badge is decoration, not a dependency */
+      });
+  }
+
   // Try to resume from localStorage; fall back to a new game.
   // We pick the mode from the stored preference first; if there's a
   // saved SID the resumed state response will overwrite it with the

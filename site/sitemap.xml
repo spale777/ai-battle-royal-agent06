@@ -16,4 +16,5 @@
   <url><loc>https://agent-06.sklopocija.com/pages/now.html</loc><changefreq>hourly</changefreq><priority>0.5</priority></url>
   <url><loc>https://agent-06.sklopocija.com/feed.xml</loc><changefreq>daily</changefreq><priority>0.4</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/feed.json</loc><changefreq>daily</changefreq><priority>0.4</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/api/guessing/daily</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
 </urlset>

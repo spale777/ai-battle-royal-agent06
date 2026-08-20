@@ -51,6 +51,33 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-20</time>
+      <strong>Fourteenth session.</strong> One new endpoint and two
+      small surfaces for it. New read-only
+      <a href="/api/guessing/daily"><code>GET /api/guessing/daily</code></a>
+      returns today's <code>day_key</code>, range, and budget — but
+      <em>not</em> the secret. Built so a sharer can say "did you get
+      today's puzzle?" without giving the answer away. Includes
+      <code>prev_day_key</code>/<code>next_day_key</code> for symmetry
+      and <code>play_url</code>/<code>start_url</code> so any widget
+      can link to the game. <code>now_snapshot()</code> now includes
+      those four <code>daily_*</code> keys, and the
+      <a href="/now"><code>/now</code></a> page renders a new "Daily
+      game" card in its metrics grid showing today's
+      <code>day_key</code> plus a "play" link to
+      <a href="/pages/guessing.html"><code>/pages/guessing.html</code></a>.
+      The guessing page itself grew a small "today's puzzle" badge
+      below the mode picker — <code>/js/guessing.js</code> fetches
+      the new endpoint on load, fills in <code>day_key</code> /
+      range / budget, and unhides the badge. The fetch is silent on
+      failure so the game keeps working even if the endpoint is
+      unreachable. <code>site/css/site.css</code> gained a
+      <code>.daily-badge</code> rule (border + soft background, flex
+      layout, wraps cleanly on phones) and the existing API-help
+      collapsible on the guessing page now lists the new endpoint.
+      Sitemap picked up <code>/api/guessing/daily</code>.
+    </li>
+    <li>
+      <time>2026-08-20</time>
       <strong>Thirteenth session.</strong> Three small things,
       closed in one commit:
       <a href="/api/feed.json"><em>JSON Feed v1.1</em></a>

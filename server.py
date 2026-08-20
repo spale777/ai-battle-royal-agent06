@@ -790,6 +790,42 @@ def guessing_abandon(sid: str) -> tuple[int, dict]:
         }
 
 
+def guessing_daily_info() -> tuple[int, dict]:
+    """Read-only metadata about today's daily puzzle.
+
+    Returns the day_key, range, and budget — but NOT the secret. This is
+    safe to expose: it's how a sharer says "did you get today's puzzle?"
+    without giving the answer away. Use POST /api/guessing?mode=daily to
+    actually start playing.
+
+    A small `prev_day_key` / `next_day_key` is included for symmetry
+    (neighbours on the calendar), but neither of those numbers is
+    leaked by this endpoint either.
+    """
+    day_key = _day_key_utc()
+    # Build neighbouring day_keys via UTC arithmetic — strptime +
+    # timedelta keeps us clear of month/year edge cases.
+    try:
+        from datetime import datetime, timedelta, timezone
+        today = datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        prev_key = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_key = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    except Exception:
+        prev_key = ""
+        next_key = ""
+    return 200, {
+        "ok": True,
+        "mode": "daily",
+        "day_key": day_key,
+        "range": [GUESSING_MIN, GUESSING_MAX],
+        "budget": GUESSING_BUDGET,
+        "start_url": "/api/guessing?mode=daily",
+        "play_url": "/pages/guessing.html",
+        "prev_day_key": prev_key,
+        "next_day_key": next_key,
+    }
+
+
 def read_stats_history() -> list:
     """Return all logged samples as a list of {t, v}."""
     try:
@@ -1121,6 +1157,7 @@ def now_snapshot() -> dict:
     wall = wall_get_full()
     shared = shared_get_full()
     pv = pageview_summary()
+    _, daily_body = guessing_daily_info()
 
     wall_last = wall["entries"][0] if wall.get("entries") else None
 
@@ -1139,6 +1176,13 @@ def now_snapshot() -> dict:
         "shared_events": len(shared.get("events", [])),
         "pageviews_total": pv.get("total", 0),
         "pageviews_top": pv.get("top", [])[:5],
+        # Daily puzzle metadata. We deliberately do NOT include the
+        # secret — only the day_key, range, budget. Visitors who want
+        # to play hit /pages/guessing.html.
+        "daily_day_key": daily_body.get("day_key"),
+        "daily_range": daily_body.get("range"),
+        "daily_budget": daily_body.get("budget"),
+        "daily_play_url": daily_body.get("play_url"),
     }
 
 
@@ -1467,6 +1511,14 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <p class="big">{{PV_TOTAL}}</p>
       <p class="muted small">across {{PV_UNIQUE}} paths</p>
     </div>
+    <div class="card">
+      <h3>Daily game</h3>
+      <p class="big">{{DAILY_DAY_KEY}}</p>
+      <p class="muted small">
+        one number per UTC day · {{DAILY_RANGE}} · {{DAILY_BUDGET}} guesses ·
+        <a href="{{DAILY_PLAY_URL}}">play</a>
+      </p>
+    </div>
   </section>
 
   <section>
@@ -1483,6 +1535,14 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       page is rendered by the server in Python on each request — no
       client-side JavaScript, no caching, no CDN. Whatever you see is
       what the server thinks is true right now.
+    </p>
+    <p class="muted small">
+      Related endpoints: <code>/api/guessing/daily</code> (today's daily
+      puzzle metadata, no secret leak) ·
+      <code>/api/wall</code> ·
+      <code>/api/shared</code> ·
+      <code>/api/pageviews</code> ·
+      <code>/api/reading</code>
     </p>
   </section>
 </main>
@@ -1536,6 +1596,17 @@ def render_now_page() -> bytes:
 
     pv_unique = len({p["path"] for p in snap["pageviews_top"]})
 
+    daily_day_key = snap.get("daily_day_key") or "—"
+    daily_range = snap.get("daily_range") or [None, None]
+    daily_budget = snap.get("daily_budget")
+    daily_play_url = snap.get("daily_play_url") or "/pages/guessing.html"
+    daily_range_str = (
+        f"{daily_range[0]}..{daily_range[1]}"
+        if daily_range[0] is not None and daily_range[1] is not None
+        else "—"
+    )
+    daily_budget_str = str(daily_budget) if daily_budget is not None else "—"
+
     replacements = {
         "{{NOW_ISO}}": _html_escape(snap["now_iso"]),
         "{{VISITS}}": visits_str,
@@ -1551,6 +1622,10 @@ def render_now_page() -> bytes:
         "{{SHARED_EVENTS}}": str(snap["shared_events"]),
         "{{PV_TOTAL}}": str(snap["pageviews_total"]),
         "{{PV_UNIQUE}}": str(pv_unique),
+        "{{DAILY_DAY_KEY}}": _html_escape(daily_day_key),
+        "{{DAILY_RANGE}}": _html_escape(daily_range_str),
+        "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
+        "{{DAILY_PLAY_URL}}": _html_escape(daily_play_url),
         "{{COMMITS}}": "\n      ".join(commit_lines) if commit_lines else '<li class="muted">no commits</li>',
     }
     out = NOW_PAGE_TEMPLATE
@@ -1763,6 +1838,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 params = parse_qs(qs, keep_blank_values=False)
                 mode = (params.get("mode", [""])[0] or "").lower().strip()
             status, body = guessing_create(mode=mode)
+            return self._json(status, body)
+        # /api/guessing/daily — read-only metadata about today's daily puzzle.
+        # Does NOT reveal the secret; safe to call from any page or widget.
+        if path == "/api/guessing/daily":
+            status, body = guessing_daily_info()
             return self._json(status, body)
         # /api/guessing/<sid> -> read state
         if path.startswith("/api/guessing/"):

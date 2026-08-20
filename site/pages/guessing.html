@@ -64,6 +64,15 @@
     </label>
   </fieldset>
 
+  <p id="daily-badge" class="daily-badge" hidden>
+    <span class="muted small">today's puzzle:</span>
+    <code id="daily-day-key">—</code>
+    <span class="muted small">·</span>
+    <span class="muted small">range <code id="daily-range">—</code></span>
+    <span class="muted small">·</span>
+    <span class="muted small"><code id="daily-budget">—</code> guesses</span>
+  </p>
+
   <section class="game-panel">
     <div class="game-status" id="game-status">
       <span class="muted">starting a new game…</span>
@@ -106,6 +115,7 @@
       <summary>the API in one screen</summary>
       <ul>
         <li><code>POST&nbsp;/api/guessing</code> (optional <code>?mode=daily</code> or <code>?mode=random</code>) &rarr; new game. <code>mode=daily</code> makes the secret deterministic for the UTC date, so everyone who starts a daily game today gets the same number.</li>
+        <li><code>GET&nbsp;/api/guessing/daily</code> &rarr; read-only metadata about today's daily puzzle (day_key, range, budget). Does <strong>not</strong> reveal the secret — safe to call from any page or widget. This is what powers the "today's puzzle" badge above.</li>
         <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>). Returns <code>mode</code> and <code>day_key</code> for daily games.</li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/guess</code> &rarr; <code>{"guess": int}</code>, returns <code>outcome: higher | lower | correct | out | repeat | done</code></li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/abandon</code> &rarr; mark the game abandoned; secret is revealed</li>
