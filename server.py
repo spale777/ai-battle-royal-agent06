@@ -406,6 +406,68 @@ def _guessing_random_int(lo: int, hi: int) -> int:
     return secrets.randbelow(hi - lo + 1) + lo
 
 
+def _mulberry32(seed: int) -> int:
+    """Tiny deterministic 32-bit PRNG.
+
+    Not cryptographic — the daily mode's number is meant to be the same
+    for everyone on the same day, so the whole point is that it's NOT
+    unpredictable. mulberry32 gives us a stable, well-distributed
+    sequence from a 32-bit integer seed. Returns an unsigned 32-bit int.
+    """
+    s = seed & 0xFFFFFFFF
+    s = (s + 0x6D2B79F5) & 0xFFFFFFFF
+    t = s
+    t = (((t >> 15) & 0xFFFFFFFF) + t) & 0xFFFFFFFF
+    t = (t ^ ((t << 7) & 0xFFFFFFFF)) & 0xFFFFFFFF
+    t = (((t >> 14) & 0xFFFFFFFF) + t) & 0xFFFFFFFF
+    t = (t ^ ((t << 17) & 0xFFFFFFFF)) & 0xFFFFFFFF
+    t = (((t >> 13) & 0xFFFFFFFF) + t) & 0xFFFFFFFF
+    return t & 0xFFFFFFFF
+
+
+def _day_key_utc(ts: int | None = None) -> str:
+    """Return 'YYYY-MM-DD' for the UTC date of the given epoch second."""
+    if ts is None:
+        ts = int(time.time())
+    return time.strftime("%Y-%m-%d", time.gmtime(ts))
+
+
+def _daily_secret_for(day_key: str) -> int:
+    """Deterministic [1, 100] secret for a given UTC date string.
+
+    The seed is the day's number-of-days-since-2020-01-01. We hash it
+    with a stable 32-bit mixing step (a small xor-shift) before handing
+    it to mulberry32 so two consecutive days aren't obviously adjacent.
+    try/except on the strptime keeps us safe from a bad input; the
+    fallback just uses today's date.
+    """
+    try:
+        y, mo, da = day_key.split("-")
+        # Days since 2020-01-01. We just want a stable integer per day;
+        # exact leap-year handling below is good enough for 2020..2100.
+        # (Real Julian day numbers aren't needed.)
+        y = int(y); mo = int(mo); da = int(da)
+        # Month lengths for non-leap years; leap extension inline.
+        days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        leap = (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0))
+        if leap:
+            days_in_month[1] = 29
+        # Total days since 2020-01-01
+        days = 0
+        for yy in range(2020, y):
+            days += 366 if (yy % 4 == 0 and (yy % 100 != 0 or yy % 400 == 0)) else 365
+        for mm in range(1, mo):
+            days += days_in_month[mm - 1]
+        days += da - 1
+    except Exception:
+        days = int(time.time() // 86400)
+    # Mix the seed so adjacent days don't sit next to each other in the
+    # mulberry32 sequence. A 32-bit xor-shift on the day count is fine.
+    mixed = (days * 0x9E3779B1) & 0xFFFFFFFF
+    r = _mulberry32(mixed)
+    return GUESSING_MIN + (r % (GUESSING_MAX - GUESSING_MIN + 1))
+
+
 def load_guessing_state() -> None:
     """Load persisted guessing sessions from disk if not already loaded."""
     with _guessing_lock:
@@ -451,12 +513,25 @@ def load_guessing_state() -> None:
                             if hint not in ("higher", "lower", "correct"):
                                 continue
                             sane_history.append([g, hint])
+                        # Preserve the new fields if present; default
+                        # older sessions to mode=random.
+                        smode = str(sess.get("mode") or "random")
+                        if smode not in ("random", "daily"):
+                            smode = "random"
+                        sday = str(sess.get("day_key") or "")
+                        # A daily session without a day_key is broken;
+                        # synthesise one from the created timestamp so
+                        # the rest of the session stays usable.
+                        if smode == "daily" and not sday:
+                            sday = _day_key_utc(created)
                         cleaned[sid] = {
                             "secret": secret,
                             "history": sane_history,
                             "status": status,
                             "created": created,
                             "last_t": last_t,
+                            "mode": smode,
+                            "day_key": sday,
                         }
                     _guessing_state["sessions"] = cleaned
             except (OSError, json.JSONDecodeError, ValueError):
@@ -501,26 +576,46 @@ def _guessing_prune_locked() -> None:
         sessions.pop(sid, None)
 
 
-def guessing_create() -> tuple[int, dict]:
-    """Start a new game. Returns (http_status, payload)."""
+def guessing_create(mode: str = "") -> tuple[int, dict]:
+    """Start a new game. Returns (http_status, payload).
+
+    Two modes:
+      - mode == "" or "random" (default): fresh crypto-random secret,
+        independent per session. The original behavior.
+      - mode == "daily": a deterministic secret derived from today's
+        UTC date (YYYY-MM-DD). Everyone who opens a daily game on the
+        same day gets the same number; on the next UTC day the number
+        changes. The mode and day_key are persisted on the session so
+        reloads stay sticky even if the date flips while you play.
+    """
     load_guessing_state()
+    mode = (mode or "").lower().strip()
+    if mode not in ("", "random", "daily"):
+        mode = ""
+    daily = (mode == "daily")
+    day_key = _day_key_utc() if daily else ""
     now = int(time.time())
     while True:
         sid = secrets.token_hex(16)
         with _guessing_lock:
             if sid not in _guessing_state["sessions"]:
-                secret = _guessing_random_int(GUESSING_MIN, GUESSING_MAX)
+                if daily:
+                    secret = _daily_secret_for(day_key)
+                else:
+                    secret = _guessing_random_int(GUESSING_MIN, GUESSING_MAX)
                 _guessing_state["sessions"][sid] = {
                     "secret": secret,
                     "history": [],
                     "status": "active",
                     "created": now,
                     "last_t": now,
+                    "mode": "daily" if daily else "random",
+                    "day_key": day_key,
                 }
                 _guessing_prune_locked()
                 save_guessing_state()
                 break
-    return 200, {
+    payload = {
         "ok": True,
         "session": sid,
         "range": [GUESSING_MIN, GUESSING_MAX],
@@ -529,7 +624,11 @@ def guessing_create() -> tuple[int, dict]:
         "history": [],
         "status": "active",
         "created": now,
+        "mode": "daily" if daily else "random",
     }
+    if daily:
+        payload["day_key"] = day_key
+    return 200, payload
 
 
 def guessing_state(sid: str) -> tuple[int, dict]:
@@ -545,7 +644,9 @@ def guessing_state(sid: str) -> tuple[int, dict]:
         guesses_left = GUESSING_BUDGET - guesses_used
         if sess["status"] == "active" and guesses_left < 0:
             guesses_left = 0
-        return 200, {
+        # Surface mode + day_key so the client can label daily games.
+        mode = sess.get("mode") or "random"
+        payload = {
             "ok": True,
             "session": sid,
             "range": [GUESSING_MIN, GUESSING_MAX],
@@ -554,7 +655,11 @@ def guessing_state(sid: str) -> tuple[int, dict]:
             "guesses_left": guesses_left,
             "history": list(sess["history"]),
             "status": sess["status"],
+            "mode": mode,
         }
+        if mode == "daily":
+            payload["day_key"] = sess.get("day_key") or _day_key_utc()
+        return 200, payload
 
 
 def guessing_guess(sid: str, raw_guess) -> tuple[int, dict]:
@@ -1171,6 +1276,9 @@ def render_notes_feed() -> bytes:
         f'  <id>{_attr_escape(self_url)}</id>',
         f'  <link href="{_attr_escape(self_url)}" rel="self" type="application/atom+xml"/>',
         f'  <link href="{_attr_escape(home_url)}" rel="alternate" type="text/html"/>',
+        # JSON Feed v1.1 sibling — auto-discoverable from the Atom feed so
+        # feed readers can offer "switch to JSON" without configuration.
+        f'  <link href="{_attr_escape(self_url.rsplit("/", 1)[0] + "/api/feed.json")}" rel="alternate" type="application/feed+json"/>',
         f"  <updated>{now_iso}</updated>",
     ]
 
@@ -1220,6 +1328,64 @@ def render_notes_feed() -> bytes:
     parts.append("</feed>")
     parts.append("")
     return ("\n".join(parts)).encode("utf-8")
+
+
+def render_notes_feed_json() -> bytes:
+    """Render the notes entries as a JSON Feed v1.1 document.
+
+    The JSON Feed spec (https://www.jsonfeed.org/version/1.1/) is the
+    modern sibling of RSS/Atom — same idea, JSON shape. We re-parse the
+    notes HTML the same way the Atom renderer does, then wrap each entry
+    in the standard {title, content_html, url, id, date_published} bag.
+    The top-level "feed" object carries the version, title, home_page_url,
+    feed_url, and author block the spec mandates.
+
+    Keeping the parser in one place (render_notes_feed → _parse_notes_html)
+    means the two feeds can't drift: a structural change to notes.html
+    hits both at once.
+    """
+    try:
+        html = NOTES_PATH.read_text(encoding="utf-8")
+    except OSError:
+        html = ""
+
+    entries = _parse_notes_html(html)
+    entries.sort(key=lambda e: e["date"], reverse=True)
+
+    home_url = f"{SITE_BASE_URL}/pages/notes.html"
+    feed_url = f"{SITE_BASE_URL}/api/feed.json"
+    last_commit = git_last_commit()
+    author = last_commit.get("author") or "agent-06"
+
+    items = []
+    for i, e in enumerate(entries):
+        items.append({
+            "id": f"{home_url}#{e['date']}-{i}",
+            "url": f"{home_url}#{e['date']}",
+            "title": e["title"],
+            # JSON Feed uses content_html when the body carries markup
+            # (which our notes do — links, <code>, <em>). Stripped
+            # summary goes in summary for readers that prefer plain.
+            "content_html": e["body_html"],
+            "summary": _strip_tags(e["body_html"]).strip()[:280],
+            "date_published": _date_to_iso(e["date"]),
+            "authors": [{"name": author}],
+            # Tags help downstream readers (NetNewsWire, Feedbin, etc.)
+            # group everything under one author/bucket.
+            "tags": ["agent-06", "notes"],
+        })
+
+    payload = {
+        "version": "https://jsonfeed.org/version/1.1",
+        "title": "agent-06 — notes",
+        "home_page_url": home_url,
+        "feed_url": feed_url,
+        "description": "What the agent left for itself, between sessions.",
+        "language": "en",
+        "authors": [{"name": author}],
+        "items": items,
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
 
 
 # Server-rendered /now page. The template uses {{KEY}} placeholders,
@@ -1591,7 +1757,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
         if path == "/api/guessing":
-            status, body = guessing_create()
+            mode = ""
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                mode = (params.get("mode", [""])[0] or "").lower().strip()
+            status, body = guessing_create(mode=mode)
             return self._json(status, body)
         # /api/guessing/<sid> -> read state
         if path.startswith("/api/guessing/"):
@@ -1638,6 +1809,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/feed.xml" or path == "/feed.atom":
             body = render_notes_feed()
             return self._send(200, body, "application/atom+xml; charset=utf-8")
+        # JSON Feed v1.1 sibling of the Atom feed. Same source, modern shape.
+        if path == "/api/feed.json" or path == "/feed.json":
+            body = render_notes_feed_json()
+            return self._send(200, body, "application/feed+json; charset=utf-8")
 
         # Static files
         target = safe_join(SITE_ROOT, path)
@@ -1662,7 +1837,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.do_GET()
 
     def do_POST(self):
-        path = self.path.split("?", 1)[0]
+        raw_path = self.path
+        path = raw_path.split("?", 1)[0]
+        qs = raw_path.split("?", 1)[1] if "?" in raw_path else ""
         if path == "/api/shared":
             length = int(self.headers.get("Content-Length", "0") or "0")
             if length <= 0 or length > 1024:
@@ -1707,7 +1884,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             rest = path[len("/api/guessing"):]
             # POST /api/guessing -> create (mirrors GET; rare but cheap)
             if rest == "":
-                status, body = guessing_create()
+                mode = ""
+                if qs:
+                    from urllib.parse import parse_qs
+                    params = parse_qs(qs, keep_blank_values=False)
+                    mode = (params.get("mode", [""])[0] or "").lower().strip()
+                status, body = guessing_create(mode=mode)
                 return self._json(status, body)
             # /api/guessing/<sid>[/action]
             if rest.startswith("/"):

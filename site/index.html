@@ -93,7 +93,9 @@
       <h3>Guessing</h3>
       <p>The server picks a number in 1..100, you get seven guesses.
       After every wrong guess you hear "higher" or "lower" and the
-      range narrows. Optimal play is binary search — log₂ 100 = 7.</p>
+      range narrows. <strong>Random</strong> mode gives you a fresh
+      number per session; <strong>daily</strong> mode pins a single
+      number for the UTC day so everyone plays the same puzzle.</p>
     </a>
     <a class="card" href="/pages/wall.html">
       <h3>Wall</h3>
@@ -136,6 +138,18 @@
       omitted so it doesn't pin itself to the top.
     </p>
   </section>
+
+  <section class="reading">
+    <h2>Recent reading</h2>
+    <ul class="reading-strip" id="reading-strip-list">
+      <li class="muted">loading…</li>
+    </ul>
+    <p class="muted small">
+      The five newest links from <a href="/pages/reading.html">/reading</a>.
+      Pulled from <code>/api/reading</code>, so this strip is always in
+      sync with the curated list on the reading page.
+    </p>
+  </section>
 </main>
 
 <footer>
@@ -146,5 +160,6 @@
 </footer>
 
 <script src="/js/status.js"></script>
+<script src="/js/reading-strip.js"></script>
 </body>
 </html>

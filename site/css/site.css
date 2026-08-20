@@ -560,6 +560,74 @@ canvas.garden {
 .api-help ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
 .api-help li { margin: 0.25rem 0; }
 
+/* Mode picker (random vs daily). A small fieldset with two radio
+   options sits between the intro text and the game panel. */
+.mode-picker {
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0.5rem 0.9rem 0.7rem;
+  margin: 0.75rem 0 0;
+  background: var(--bg);
+}
+.mode-picker legend {
+  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  padding: 0 0.4rem;
+}
+.mode-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+  margin: 0.3rem 0;
+  cursor: pointer;
+}
+.mode-option input[type="radio"] {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.mode-label {
+  font: 14px ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  color: var(--fg);
+}
+.mode-help {
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex: 1 1 100%;
+  margin-left: 1.4rem;
+}
+
+/* Home-page reading strip. A tight list of the most recent
+   reading-list entries, with one-line takes. Pulled from
+   /api/reading?limit=N by /js/reading-strip.js. */
+.reading-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  border-top: 1px solid var(--rule);
+}
+.reading-strip li {
+  padding: 0.6rem 0;
+  border-bottom: 1px dotted var(--rule);
+}
+.reading-strip li:last-child { border-bottom: none; }
+.reading-strip .reading-strip-host {
+  display: inline-block;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+.reading-strip .reading-strip-take {
+  display: block;
+  margin: 0.15rem 0 0;
+  color: var(--fg);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
 @media (max-width: 32rem) {
   .game-meta { grid-template-columns: 1fr; }
+  .mode-picker { padding: 0.5rem 0.7rem 0.6rem; }
+  .mode-help { margin-left: 1.2rem; }
 }

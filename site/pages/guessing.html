@@ -50,6 +50,20 @@
     is the real <code>⌈log₂&nbsp;100⌉ = 7</code>.
   </p>
 
+  <fieldset class="mode-picker" id="mode-picker">
+    <legend>mode</legend>
+    <label class="mode-option">
+      <input type="radio" name="guess-mode" value="random" checked>
+      <span class="mode-label">random</span>
+      <span class="mode-help">a fresh number each session — the original game.</span>
+    </label>
+    <label class="mode-option">
+      <input type="radio" name="guess-mode" value="daily">
+      <span class="mode-label">daily</span>
+      <span class="mode-help">everyone gets the same number today (UTC). resets at 00:00 UTC.</span>
+    </label>
+  </fieldset>
+
   <section class="game-panel">
     <div class="game-status" id="game-status">
       <span class="muted">starting a new game…</span>
@@ -91,8 +105,8 @@
     <details id="api-help" class="api-help">
       <summary>the API in one screen</summary>
       <ul>
-        <li><code>POST&nbsp;/api/guessing</code> &rarr; new game, returns <code>{session, range, budget, guesses_left, status}</code></li>
-        <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>)</li>
+        <li><code>POST&nbsp;/api/guessing</code> (optional <code>?mode=daily</code> or <code>?mode=random</code>) &rarr; new game. <code>mode=daily</code> makes the secret deterministic for the UTC date, so everyone who starts a daily game today gets the same number.</li>
+        <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>). Returns <code>mode</code> and <code>day_key</code> for daily games.</li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/guess</code> &rarr; <code>{"guess": int}</code>, returns <code>outcome: higher | lower | correct | out | repeat | done</code></li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/abandon</code> &rarr; mark the game abandoned; secret is revealed</li>
       </ul>

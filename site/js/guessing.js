@@ -2,9 +2,12 @@
 //
 // Server contract:
 //   POST /api/guessing                           -> start a game
-//       returns { ok, session, range, budget, guesses_left, history, status, created }
+//       optional query: ?mode=daily  (or ?mode=random, default)
+//       returns { ok, session, range, budget, guesses_left, history, status,
+//                 created, mode, day_key? }
 //   GET  /api/guessing/<sid>                     -> read state (no secret on active)
-//       returns { ok, session, range, budget, guesses_used, guesses_left, history, status }
+//       returns { ok, session, range, budget, guesses_used, guesses_left,
+//                 history, status, mode, day_key? }
 //   POST /api/guessing/<sid>/guess               -> {guess: int}
 //       returns { ok, session, outcome, guess, guesses_used, guesses_left, history, status,
 //                 range, budget, secret? }
@@ -14,13 +17,16 @@
 // The session id is kept in localStorage so a page reload keeps the
 // same game. Each game records the player's best outcome in
 // localStorage too: fewest guesses to win, or "lost" if all seven
-// were used without finding it.
+// were used without finding it. The best is tracked per mode —
+// daily games and random games have independent records.
 
 (function () {
   'use strict';
 
   const LS_SID_KEY = 'agent06.guessing.session';
   const LS_BEST_KEY = 'agent06.guessing.best';
+  const LS_BEST_DAILY_KEY = 'agent06.guessing.best.daily';
+  const LS_MODE_KEY = 'agent06.guessing.mode';
 
   const $status = document.getElementById('game-status');
   const $form = document.getElementById('guess-form');
@@ -32,8 +38,10 @@
   const $range = document.getElementById('range-narrow');
   const $history = document.getElementById('guess-history');
   const $best = document.getElementById('best-score');
+  const $modeRadios = document.querySelectorAll('input[name="guess-mode"]');
 
   let currentSID = null;
+  let currentMode = 'random'; // "random" or "daily"
   let rangeLo = 1;
   let rangeHi = 100;
 
@@ -80,6 +88,39 @@
     } else {
       $best.textContent = '—';
     }
+  }
+
+  // The best score is tracked per mode — daily games don't pollute the
+  // random best, and vice versa. Two localStorage keys, two records.
+  function recordKey() {
+    return currentMode === 'daily' ? LS_BEST_DAILY_KEY : LS_BEST_KEY;
+  }
+
+  function recordOutcome(state) {
+    const key = recordKey();
+    let cur;
+    try {
+      const raw = localStorage.getItem(key);
+      cur = raw ? JSON.parse(raw) : null;
+      if (!cur || typeof cur !== 'object') cur = null;
+    } catch (e) {
+      cur = null;
+    }
+    cur = cur || {};
+    if (state.status === 'won') {
+      const prev = cur.outcome === 'won' ? (cur.guesses_used || 99) : 99;
+      if (state.guesses_used < prev) {
+        cur = { outcome: 'won', guesses_used: state.guesses_used, at: Date.now() };
+      }
+    } else if (state.status === 'lost') {
+      if (cur.outcome !== 'won') {
+        cur = { outcome: 'lost', at: Date.now() };
+      }
+    } else {
+      return;  // don't clobber with abandon / etc.
+    }
+    try { localStorage.setItem(key, JSON.stringify(cur)); } catch (e) {}
+    renderBest();
   }
 
   function renderRange() {
@@ -134,23 +175,8 @@
     if ($newBtn) $newBtn.disabled = false;  // always allowed
   }
 
-  function recordOutcome(state) {
-    const cur = readBest() || {};
-    // Only update best when we beat our previous record.
-    if (state.status === 'won') {
-      const prev = cur.outcome === 'won' ? (cur.guesses_used || 99) : 99;
-      if (state.guesses_used < prev) {
-        writeBest({ outcome: 'won', guesses_used: state.guesses_used, at: Date.now() });
-      }
-    } else if (state.status === 'lost') {
-      if (cur.outcome !== 'won') {
-        // Only record a loss as "best" if we never won — otherwise the
-        // win record stands.
-        writeBest({ outcome: 'lost', at: Date.now() });
-      }
-    }
-    renderBest();
-  }
+  // (recordOutcome is defined earlier — see the version that picks the
+  // localStorage key based on currentMode.)
 
   async function newGame() {
     setStatus('starting a new game…');
@@ -160,8 +186,10 @@
     renderRange();
     renderHistory([]);
     if ($left) $left.textContent = '—';
+    // Pick up the current mode selector and tell the server.
+    const mode = currentMode === 'daily' ? 'daily' : '';
     try {
-      const resp = await fetch('/api/guessing', { method: 'POST' });
+      const resp = await fetch('/api/guessing?mode=' + encodeURIComponent(mode), { method: 'POST' });
       const data = await resp.json();
       if (!data || !data.session) {
         setStatus('failed to start a game.');
@@ -169,17 +197,25 @@
         return;
       }
       currentSID = data.session;
-      try { localStorage.setItem(LS_SID_KEY, currentSID); } catch (e) {}
+      currentMode = data.mode === 'daily' ? 'daily' : 'random';
+      try {
+        localStorage.setItem(LS_SID_KEY, currentSID);
+        localStorage.setItem(LS_MODE_KEY, currentMode);
+      } catch (e) {}
       updateAfterState(data);
       const lo = data.range[0];
       const hi = data.range[1];
-      setStatus(`new game · ${data.budget} guesses · secret is in [${lo}, ${hi}].`);
+      const modeLabel = currentMode === 'daily'
+        ? `daily game · ${data.day_key || ''}`.trim()
+        : 'new game';
+      setStatus(`${modeLabel} · ${data.budget} guesses · secret is in [${lo}, ${hi}].`);
       if ($input) {
         $input.min = String(lo);
         $input.max = String(hi);
         $input.value = '';
         $input.focus();
       }
+      renderBest();
     } catch (e) {
       setStatus('network error — try again.');
     }
@@ -190,26 +226,62 @@
       const resp = await fetch('/api/guessing/' + encodeURIComponent(sid));
       const data = await resp.json();
       if (!data || data.ok === false) {
-        // Session is gone — start a new one.
+        // Session is gone — start a new one in the mode the user
+        // last picked.
+        currentMode = readModePref() || 'random';
         return newGame();
       }
       currentSID = data.session;
+      currentMode = data.mode === 'daily' ? 'daily' : 'random';
+      // Keep the UI selector in sync.
+      syncModeRadios(currentMode);
       updateAfterState(data);
       const status = data.status || 'active';
+      const modeLabel = currentMode === 'daily'
+        ? `daily (${data.day_key || ''})`.trim()
+        : 'resumed';
       if (status === 'active') {
-        setStatus(`resumed · ${data.guesses_left} guesses left.`);
+        setStatus(`${modeLabel} · ${data.guesses_left} guesses left.`);
         if ($input) $input.focus();
       } else if (status === 'won') {
-        setStatus(`you already won this game (${data.guesses_used} of ${data.budget}). start a new game any time.`);
+        setStatus(`${modeLabel} · you already won this game (${data.guesses_used} of ${data.budget}). start a new game any time.`);
       } else if (status === 'lost') {
-        setStatus(`you already lost this game (${data.guesses_used} of ${data.budget}). start a new game any time.`);
+        setStatus(`${modeLabel} · you already lost this game (${data.guesses_used} of ${data.budget}). start a new game any time.`);
       } else {
-        setStatus(`resumed · game status: ${status}.`);
+        setStatus(`${modeLabel} · game status: ${status}.`);
       }
+      renderBest();
     } catch (e) {
       // Network error — fall back to a new game.
+      currentMode = readModePref() || 'random';
       newGame();
     }
+  }
+
+  function readModePref() {
+    try {
+      const v = (localStorage.getItem(LS_MODE_KEY) || '').toLowerCase();
+      return v === 'daily' ? 'daily' : 'random';
+    } catch (e) { return 'random'; }
+  }
+
+  function syncModeRadios(mode) {
+    if (!$modeRadios || !$modeRadios.length) return;
+    for (const r of $modeRadios) {
+      r.checked = (r.value === mode);
+    }
+  }
+
+  function onModeChange(ev) {
+    const v = ev && ev.target ? ev.target.value : '';
+    const next = v === 'daily' ? 'daily' : 'random';
+    if (next === currentMode) return;
+    // Mode change is a fresh game — wipe the active SID and start one.
+    currentSID = null;
+    try { localStorage.removeItem(LS_SID_KEY); } catch (e) {}
+    try { localStorage.setItem(LS_MODE_KEY, next); } catch (e) {}
+    currentMode = next;
+    newGame();
   }
 
   async function submitGuess(ev) {
@@ -278,6 +350,13 @@
   function wireUI() {
     if ($form) $form.addEventListener('submit', submitGuess);
     if ($newBtn) $newBtn.addEventListener('click', newGame);
+    if ($modeRadios && $modeRadios.length) {
+      // Reflect any stored preference in the UI before we resume.
+      syncModeRadios(readModePref());
+      for (const r of $modeRadios) {
+        r.addEventListener('change', onModeChange);
+      }
+    }
     renderRange();
     renderBest();
   }
@@ -285,6 +364,11 @@
   wireUI();
 
   // Try to resume from localStorage; fall back to a new game.
+  // We pick the mode from the stored preference first; if there's a
+  // saved SID the resumed state response will overwrite it with the
+  // authoritative server-side mode.
+  currentMode = readModePref() || 'random';
+  syncModeRadios(currentMode);
   let savedSID = null;
   try {
     savedSID = localStorage.getItem(LS_SID_KEY) || null;
