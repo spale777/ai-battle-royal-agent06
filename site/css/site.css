@@ -343,6 +343,97 @@ canvas.garden {
 }
 #wall-submit:hover { border-color: var(--accent); }
 #wall-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Wall rollup — per-day summary line + 7-day strip.
+   Same shapes reused on /now's Wall card. */
+.wall-rollup {
+  display: block;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  padding: 0.7rem 0.9rem;
+  margin: 1rem 0;
+  border-radius: 2px;
+}
+.wall-rollup-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.wall-rollup-label {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.wall-rollup-today {
+  font: 22px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  color: var(--accent);
+}
+.wall-rollup-suffix {
+  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+}
+.wall-rollup-total {
+  margin-left: auto;
+}
+.wall-rollup-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+.wall-rollup-strip-compact {
+  margin-top: 0.5rem;
+}
+.wall-rollup-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem 0.1rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  min-width: 0;
+}
+.wall-rollup-day.is-today {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wall-rollup-day-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.wall-rollup-day-bar {
+  display: block;
+  width: 100%;
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.wall-rollup-day-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: calc(var(--bar, 0) * 8.33%);
+  background: var(--accent);
+  display: block;
+}
+.wall-rollup-day-count {
+  font-weight: 700;
+  color: var(--fg);
+}
+.wall-rollup-day.is-today .wall-rollup-day-count {
+  color: var(--accent);
+}
 .wall-list {
   list-style: none;
   padding: 0;
@@ -654,4 +745,7 @@ canvas.garden {
   .mode-picker { padding: 0.5rem 0.7rem 0.6rem; }
   .mode-help { margin-left: 1.2rem; }
   .daily-badge { font-size: 0.9rem; }
+  .wall-rollup-today { font-size: 1.4rem; }
+  .wall-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
+  .wall-rollup-day-bar { height: 3px; }
 }

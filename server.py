@@ -348,6 +348,95 @@ def wall_get_full() -> dict:
         return {"entries": list(reversed(_wall_state["entries"]))}
 
 
+def wall_summary(days: int = 7) -> dict:
+    """Roll up wall entries by UTC day.
+
+    Returns a small dict intended for the /api/wall/summary endpoint and
+    the /now snapshot. Keys:
+
+      - total         : total entries currently stored
+      - today_count   : entries on the current UTC day (the rollover happens
+                        at 00:00 UTC; we deliberately don't pin to local time
+                        because the server has no notion of visitor time)
+      - today_day_key : YYYY-MM-DD for "today"
+      - since_unix    : unix seconds for the start of the UTC day
+      - last          : the most recent entry (or None)
+      - by_day        : list of {day, count, last_message?, last_name?,
+                        last_t?} for the last `days` days, oldest first
+
+    Rollup is cheap (entries are few; bounded by WALL_MAX_ENTRIES) so we
+    recompute on every call rather than caching.
+    """
+    load_wall_state()
+    # Clamp the window hard so a malformed caller can't request a million
+    # days. Upper cap leaves room for "give me a year of buckets" while
+    # still being bounded.
+    days = max(1, min(int(days or 1), 365))
+    now = int(time.time())
+    today_key = _day_key_utc(now)
+    # UTC midnight for today, as a unix second.
+    today_midnight = now - (now % 86400)
+
+    with _wall_lock:
+        entries = list(_wall_state["entries"])
+
+    # Per-day bucketing, oldest first.
+    counts: dict[str, int] = {}
+    last_per_day: dict[str, dict] = {}
+    today_count = 0
+    for e in entries:
+        t = int(e.get("t") or 0)
+        if t <= 0:
+            continue
+        key = _day_key_utc(t)
+        counts[key] = counts.get(key, 0) + 1
+        # "last" per day = the entry with the largest t. Walk entries in
+        # insertion order (oldest first), so overwrite only when strictly
+        # newer — this gives the last entry per day.
+        prev = last_per_day.get(key)
+        if prev is None or t > int(prev.get("t") or 0):
+            last_per_day[key] = {
+                "name": e.get("name", "anonymous"),
+                "message": e.get("message", ""),
+                "t": t,
+            }
+        if t >= today_midnight:
+            today_count += 1
+
+    # Build a continuous window of `days` days ending today, so the chart
+    # always has the same shape even on quiet days.
+    by_day = []
+    for offset in range(days - 1, -1, -1):
+        day_ts = today_midnight - offset * 86400
+        key = _day_key_utc(day_ts)
+        last = last_per_day.get(key)
+        item = {"day": key, "count": counts.get(key, 0)}
+        if last is not None:
+            item["last_name"] = last.get("name", "anonymous")
+            item["last_message"] = last.get("message", "")
+            item["last_t"] = last.get("t")
+        by_day.append(item)
+
+    last_entry = entries[-1] if entries else None
+    last_payload = None
+    if last_entry:
+        last_payload = {
+            "name": last_entry.get("name", "anonymous"),
+            "message": last_entry.get("message", ""),
+            "t": int(last_entry.get("t") or 0),
+        }
+
+    return {
+        "total": len(entries),
+        "today_count": today_count,
+        "today_day_key": today_key,
+        "since_unix": today_midnight,
+        "days": days,
+        "by_day": by_day,
+        "last": last_payload,
+    }
+
+
 def wall_post(ip: str, name: str, message: str) -> tuple[int, dict]:
     """Append a wall entry. Returns (http_status, payload)."""
     load_wall_state()
@@ -1155,6 +1244,7 @@ def now_snapshot() -> dict:
     last = git_last_commit()
     recent = git_recent_commits(5)
     wall = wall_get_full()
+    wall_roll = wall_summary(7)
     shared = shared_get_full()
     pv = pageview_summary()
     _, daily_body = guessing_daily_info()
@@ -1172,6 +1262,12 @@ def now_snapshot() -> dict:
         "visits_stale": bool(stats.get("stale")),
         "wall_total": len(wall.get("entries", [])),
         "wall_last": wall_last,
+        # Per-day wall rollup: today + last-7-days buckets. Surface enough
+        # metadata to render a small "traffic" strip on /now without a
+        # second fetch. The full payload is at /api/wall/summary.
+        "wall_today_count": wall_roll.get("today_count"),
+        "wall_today_day_key": wall_roll.get("today_day_key"),
+        "wall_by_day": wall_roll.get("by_day", []),
         "shared_version": shared.get("version"),
         "shared_events": len(shared.get("events", [])),
         "pageviews_total": pv.get("total", 0),
@@ -1498,8 +1594,13 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
     </div>
     <div class="card">
       <h3>Wall</h3>
-      <p class="big">{{WALL_TOTAL}}</p>
-      <p class="muted small">{{WALL_LAST}}</p>
+      <p class="big">{{WALL_TODAY_COUNT}}</p>
+      <p class="muted small">
+        today ({{WALL_TODAY_DAY_KEY}}) · {{WALL_TOTAL}} total · {{WALL_LAST}}
+      </p>
+      <ul class="wall-rollup-strip wall-rollup-strip-compact" aria-label="Last 7 days">
+        {{WALL_BY_DAY}}
+      </ul>
     </div>
     <div class="card">
       <h3>Shared canvas</h3>
@@ -1540,6 +1641,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       Related endpoints: <code>/api/guessing/daily</code> (today's daily
       puzzle metadata, no secret leak) ·
       <code>/api/wall</code> ·
+      <code>/api/wall/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/shared</code> ·
       <code>/api/pageviews</code> ·
       <code>/api/reading</code>
@@ -1580,6 +1682,40 @@ def render_now_page() -> bytes:
     else:
         wall_last_str = "no entries yet — be the first"
 
+    wall_today_count = snap.get("wall_today_count") or 0
+    wall_today_day_key = snap.get("wall_today_day_key") or _day_key_utc(snap["now"])
+    wall_by_day = snap.get("wall_by_day") or []
+    # Render the compact 7-day strip inline. The bar width is a CSS
+    # custom property (--bar: 0..12) so the CSS controls the visual
+    # appearance; the server only emits the count math.
+    if wall_by_day:
+        max_count = max((d.get("count") or 0) for d in wall_by_day) or 1
+        strip_cells = []
+        for d in wall_by_day:
+            day = d.get("day") or ""
+            short = day[5:] if len(day) >= 10 else day  # MM-DD
+            count = int(d.get("count") or 0)
+            bar = 0 if count == 0 else max(1, round((count / max_count) * 12))
+            is_today = " is-today" if day == wall_today_day_key else ""
+            tip = ""
+            if d.get("last_message"):
+                tip = (
+                    f" title=\""
+                    f"{_html_escape((d.get('last_name') or 'anonymous') + ': ')}"
+                    f"{_html_escape((d.get('last_message') or '')[:40])}"
+                    f"\""
+                )
+            strip_cells.append(
+                f'<li class="wall-rollup-day{is_today}"{tip}>'
+                f'<span class="wall-rollup-day-label">{_html_escape(short)}</span>'
+                f'<span class="wall-rollup-day-bar" style="--bar:{bar}"></span>'
+                f'<span class="wall-rollup-day-count">{count}</span>'
+                f'</li>'
+            )
+        wall_by_day_html = "\n        ".join(strip_cells)
+    else:
+        wall_by_day_html = '<li class="muted">no data</li>'
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -1618,6 +1754,9 @@ def render_now_page() -> bytes:
         "{{LAST_WHEN}}": _html_escape(last_commit_age + " ago" if last_commit_age else ""),
         "{{WALL_TOTAL}}": str(snap["wall_total"]),
         "{{WALL_LAST}}": wall_last_str,
+        "{{WALL_TODAY_COUNT}}": str(wall_today_count),
+        "{{WALL_TODAY_DAY_KEY}}": _html_escape(wall_today_day_key),
+        "{{WALL_BY_DAY}}": wall_by_day_html,
         "{{SHARED_VERSION}}": f"v{snap['shared_version']}" if snap["shared_version"] is not None else "—",
         "{{SHARED_EVENTS}}": str(snap["shared_events"]),
         "{{PV_TOTAL}}": str(snap["pageviews_total"]),
@@ -1829,6 +1968,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, shared_get_full())
         if path == "/api/wall":
             return self._json(200, wall_get_full())
+        # /api/wall/summary?days=N — per-day rollup of wall entries.
+        # Defaults to 7 days; max 365. Cheap to compute, no caching.
+        if path == "/api/wall/summary":
+            days = 7
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = 7
+            return self._json(200, wall_summary(days=days))
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
         if path == "/api/guessing":

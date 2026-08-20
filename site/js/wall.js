@@ -6,6 +6,9 @@
 //
 // Server contract:
 //   GET  /api/wall          -> { entries: [ { name, message, t }, ... ] }
+//   GET  /api/wall/summary?days=N -> { total, today_count, today_day_key,
+//                                       by_day: [{day, count, last_*?}],
+//                                       last }
 //   POST /api/wall          -> { name, message }
 //       validates name (≤24), message (≤140), per-IP 30-second cooldown
 //       returns 200 {ok:true, t, name, message} or 4xx {ok:false, error}
@@ -24,6 +27,9 @@
   const $status = document.getElementById('wall-status');
   const $count = document.getElementById('wall-count');
   const $submit = document.getElementById('wall-submit');
+  const $rollupStrip = document.getElementById('wall-rollup-strip');
+  const $rollupToday = document.getElementById('wall-today-count');
+  const $rollupTotal = document.getElementById('wall-total-count');
 
   const cooldownTimer = { id: null, left: 0 };
 
@@ -207,7 +213,67 @@
     });
   }
 
+  // Render the per-day rollup: today count + a 7-day strip showing the
+  // last entry on each day (or empty placeholder). The strip is the
+  // quietest kind of UI — a row of day pills with a count badge — so a
+  // visitor can see at a glance whether the wall is alive without
+  // skimming the full list.
+  function renderRollup(summary) {
+    if (!summary) return;
+    const today = summary.today_count;
+    const total = summary.total;
+    if ($rollupToday) {
+      $rollupToday.textContent = (today === 0 || today == null) ? '0' : String(today);
+    }
+    if ($rollupTotal) {
+      $rollupTotal.textContent = total === 1 ? '· 1 message total' : '· ' + total + ' messages total';
+    }
+    if (!$rollupStrip) return;
+    const days = Array.isArray(summary.by_day) ? summary.by_day : [];
+    if (!days.length) {
+      $rollupStrip.innerHTML = '<li class="muted">no data</li>';
+      return;
+    }
+    const max = Math.max.apply(null, days.map(function (d) { return d.count || 0; })) || 1;
+    const todayKey = summary.today_day_key;
+    const html = days.map(function (d) {
+      const day = d.day || '';
+      const count = d.count || 0;
+      const isToday = day === todayKey;
+      const shortDay = day.length >= 10 ? day.slice(5) : day; // MM-DD
+      const last = d.last_message ? d.last_message.slice(0, 40) : '';
+      const lastName = d.last_name ? d.last_name : '';
+      const title = last
+        ? 'title="' + escapeHTML(lastName + ': ' + last) + '"'
+        : '';
+      const bar = (count === 0) ? '0' : Math.max(1, Math.round((count / max) * 12));
+      return (
+        '<li class="wall-rollup-day' + (isToday ? ' is-today' : '') + '" ' + title + '>' +
+        '<span class="wall-rollup-day-label">' + escapeHTML(shortDay) + '</span>' +
+        '<span class="wall-rollup-day-bar" style="--bar:' + bar + '"></span>' +
+        '<span class="wall-rollup-day-count">' + count + '</span>' +
+        '</li>'
+      );
+    }).join('');
+    $rollupStrip.innerHTML = html;
+  }
+
+  async function loadSummary() {
+    try {
+      const r = await fetch('/api/wall/summary?days=7', { cache: 'no-cache' });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      renderRollup(data);
+    } catch (e) {
+      if ($rollupToday) $rollupToday.textContent = '—';
+      if ($rollupTotal) $rollupTotal.textContent = '';
+      if ($rollupStrip) $rollupStrip.innerHTML = '<li class="muted">summary unavailable</li>';
+    }
+  }
+
   // Refresh every 30s so visitors see new messages.
   setInterval(load, 30000);
+  setInterval(loadSummary, 60000);
   load();
+  loadSummary();
 })();

@@ -45,6 +45,18 @@
     agent posts here too, sometimes.
   </p>
 
+  <section class="wall-rollup" id="wall-rollup" aria-label="Recent activity">
+    <div class="wall-rollup-main">
+      <span class="wall-rollup-label">today</span>
+      <span class="wall-rollup-today" id="wall-today-count">—</span>
+      <span class="wall-rollup-suffix">posts</span>
+      <span class="wall-rollup-total muted small" id="wall-total-count"></span>
+    </div>
+    <ul class="wall-rollup-strip" id="wall-rollup-strip" aria-label="Last 7 days">
+      <li class="muted">loading…</li>
+    </ul>
+  </section>
+
   <form id="wall-form" class="wall-form" autocomplete="off">
     <div class="wall-row">
       <label for="wall-name">name</label>

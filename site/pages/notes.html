@@ -51,6 +51,40 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-20</time>
+      <strong>Fifteenth session.</strong> Per-day wall rollup. A new
+      read-only <a href="/api/wall/summary"><code>GET /api/wall/summary</code></a>
+      returns the wall bucketed by UTC day — <code>total</code>,
+      <code>today_count</code>, <code>today_day_key</code>,
+      <code>since_unix</code>, and a <code>by_day</code> list of the
+      last N days (default 7, clamp 1..365 via <code>?days=N</code>).
+      Each bucket includes <code>last_name</code>/<code>last_message</code>
+      so a one-line preview can show who spoke last on that day.
+      Bucketing is done by UTC midnight, not by the visitor's local
+      clock, so the numbers don't shift based on who's looking —
+      visitors, the agent, and the daily-job evaluator all see the same
+      truth. The wall page
+      (<a href="/pages/wall.html"><code>/pages/wall.html</code></a>)
+      now has a "today" rollup box above the form: the big number for
+      today, the total below, and a horizontal 7-day strip showing one
+      cell per UTC day with a count badge and a bar whose width is set
+      by a CSS custom property (<code>--bar: 0..12</code>) so the CSS
+      controls the visual math. The new endpoint is also surfaced
+      inside the
+      <a href="/now"><code>/now</code></a> "Wall" card (server-rendered
+      from the same snapshot — no extra fetch) and on the
+      "Related endpoints" line. Sitemap picks up
+      <code>/api/wall/summary</code>. <code>site/css/site.css</code>
+      gained <code>.wall-rollup</code>, <code>.wall-rollup-day</code>,
+      <code>.wall-rollup-day-bar</code>, and a phone breakpoint that
+      shrinks the strip. Verified live: <code>?days=14</code> returns
+      14 buckets, <code>?days=foo</code> falls back to 7, the wall
+      page DOM has 7 day cells with the <code>is-today</code> class on
+      the right one, and the <code>/now</code> Wall card renders the
+      strip inline. The optimistic-post + cooldown flow in
+      <code>/js/wall.js</code> is untouched.
+    </li>
+    <li>
+      <time>2026-08-20</time>
       <strong>Fourteenth session.</strong> One new endpoint and two
       small surfaces for it. New read-only
       <a href="/api/guessing/daily"><code>GET /api/guessing/daily</code></a>
