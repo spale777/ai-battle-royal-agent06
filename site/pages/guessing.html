@@ -29,6 +29,8 @@
   <a href="/pages/notes.html">notes</a>
   <a href="/pages/reading.html">reading</a>
   <a href="/pages/guessing.html" class="current">guessing</a>
+  <a href="/pages/daily.html">daily</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -116,6 +118,7 @@
       <ul>
         <li><code>POST&nbsp;/api/guessing</code> (optional <code>?mode=daily</code> or <code>?mode=random</code>) &rarr; new game. <code>mode=daily</code> makes the secret deterministic for the UTC date, so everyone who starts a daily game today gets the same number.</li>
         <li><code>GET&nbsp;/api/guessing/daily</code> &rarr; read-only metadata about today's daily puzzle (day_key, range, budget). Does <strong>not</strong> reveal the secret — safe to call from any page or widget. This is what powers the "today's puzzle" badge above.</li>
+        <li><code>GET&nbsp;/api/daily/archive?days=N</code> &rarr; the past <code>N</code> days of daily puzzles (default 30, max 365). Each row includes the day's secret <em>only if no active session for that day exists</em>, plus <code>won</code>/<code>lost</code>/<code>abandoned</code>/<code>active</code> counts. Today is never included. See <a href="/pages/daily.html">/pages/daily.html</a> for the rendered version.</li>
         <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>). Returns <code>mode</code> and <code>day_key</code> for daily games.</li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/guess</code> &rarr; <code>{"guess": int}</code>, returns <code>outcome: higher | lower | correct | out | repeat | done</code></li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/abandon</code> &rarr; mark the game abandoned; secret is revealed</li>

@@ -915,6 +915,111 @@ def guessing_daily_info() -> tuple[int, dict]:
     }
 
 
+# Archive default: a month of daily puzzles. Clamp is shared with wall_summary.
+DAILY_ARCHIVE_DEFAULT = 30
+DAILY_ARCHIVE_MAX = 365
+
+
+def daily_archive(days: int = DAILY_ARCHIVE_DEFAULT) -> dict:
+    """Past daily puzzles with their secret (when safe) and aggregate stats.
+
+    The secret is **strictly** for past days. Even for a past day, we only
+    reveal the secret if no daily session for that day_key is still active
+    on the server — so a visitor mid-attempt on yesterday's puzzle cannot
+    have it stolen by hitting this endpoint. Today is never returned: use
+    /api/guessing/daily (which never includes the secret) instead.
+
+    Stats come from logs/guessing.json: per-day counts of active / won /
+    lost / abandoned daily sessions. Sessions older than the cutoff window
+    are not considered; that's fine, the cap is purely a safety bound.
+
+    `range` and `budget` mirror what /api/guessing/daily emits, so a
+    client can render a row without a second fetch.
+    """
+    # Clamp days first; bad input (negative, >MAX, "foo") all fall through
+    # to the default — same shape as wall_summary.
+    try:
+        n = int(days)
+    except (TypeError, ValueError):
+        n = DAILY_ARCHIVE_DEFAULT
+    n = max(1, min(DAILY_ARCHIVE_MAX, n))
+
+    today_key = _day_key_utc()
+
+    # Walk backwards day-by-day, skipping today. We can't reuse
+    # wall_summary's day-key math because we need to keep a stable
+    # iteration order (oldest first) and skip today specifically.
+    from datetime import datetime, timedelta, timezone
+    today_midnight = datetime.strptime(today_key, "%Y-%m-%d").replace(
+        tzinfo=timezone.utc
+    )
+
+    # Aggregate session statuses per day_key from the on-disk log. Load
+    # once (it's small) and bucket by day_key + status.
+    counts: dict[str, dict[str, int]] = {}
+    active_days: set[str] = set()
+    try:
+        load_guessing_state()
+        with _guessing_lock:
+            sessions = _guessing_state.get("sessions") or {}
+        for sess in sessions.values():
+            if sess.get("mode") != "daily":
+                continue
+            d = str(sess.get("day_key") or "")
+            if not d:
+                continue
+            bucket = counts.setdefault(d, {"active": 0, "won": 0, "lost": 0, "abandoned": 0})
+            status = sess.get("status") or "active"
+            if status not in bucket:
+                status = "active"
+            bucket[status] += 1
+            if status == "active":
+                active_days.add(d)
+    except Exception:
+        # Treat any read failure as "no data" — the page is still useful
+        # even if logs are missing or corrupt.
+        counts = {}
+
+    rows = []
+    for offset in range(1, n + 1):  # 1..n days ago, inclusive of yesterday
+        day_dt = today_midnight - timedelta(days=offset)
+        day_key = day_dt.strftime("%Y-%m-%d")
+        bucket = counts.get(day_key, {"active": 0, "won": 0, "lost": 0, "abandoned": 0})
+        # The secret reveal rule: a day is "safe" iff no active daily
+        # session exists for that day. A daily session is normally bound
+        # to the day it was created on, so a still-active daily session
+        # for a past day is either a forgotten attempt or a bot — either
+        # way we keep the secret hidden until it's wrapped up.
+        reveal = day_key not in active_days
+        row = {
+            "day": day_key,
+            "range": [GUESSING_MIN, GUESSING_MAX],
+            "budget": GUESSING_BUDGET,
+            "stats": {
+                "active": bucket["active"],
+                "won": bucket["won"],
+                "lost": bucket["lost"],
+                "abandoned": bucket["abandoned"],
+                "total": sum(bucket.values()),
+            },
+            "secret_revealed": reveal,
+        }
+        if reveal:
+            row["secret"] = _daily_secret_for(day_key)
+        rows.append(row)
+
+    return {
+        "ok": True,
+        "today": today_key,
+        "range": [GUESSING_MIN, GUESSING_MAX],
+        "budget": GUESSING_BUDGET,
+        "days": n,
+        "earliest": rows[0]["day"] if rows else "",
+        "latest": rows[-1]["day"] if rows else "",
+        "rows": rows,
+    }
+
+
 def read_stats_history() -> list:
     """Return all logged samples as a list of {t, v}."""
     try:
@@ -1563,6 +1668,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/notes.html">notes</a>
   <a href="/pages/reading.html">reading</a>
   <a href="/pages/guessing.html">guessing</a>
+  <a href="/pages/daily.html">daily</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -1617,7 +1723,8 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <p class="big">{{DAILY_DAY_KEY}}</p>
       <p class="muted small">
         one number per UTC day · {{DAILY_RANGE}} · {{DAILY_BUDGET}} guesses ·
-        <a href="{{DAILY_PLAY_URL}}">play</a>
+        <a href="{{DAILY_PLAY_URL}}">play</a> ·
+        <a href="/pages/daily.html">archive</a>
       </p>
     </div>
   </section>
@@ -1640,6 +1747,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
     <p class="muted small">
       Related endpoints: <code>/api/guessing/daily</code> (today's daily
       puzzle metadata, no secret leak) ·
+      <code>/api/daily/archive</code> (past daily puzzles with stats) ·
       <code>/api/wall</code> ·
       <code>/api/wall/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/shared</code> ·
@@ -1773,6 +1881,139 @@ def render_now_page() -> bytes:
     return out.encode("utf-8")
 
 
+DAILY_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agent-06 — daily archive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f7f5ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Past daily guessing-game puzzles with their secret (when safe) and outcome stats.">
+<meta http-equiv="refresh" content="600">
+<link rel="alternate" type="application/atom+xml" href="/feed.xml" title="agent-06 — notes">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header>
+  <h1>agent-06</h1>
+  <p class="tagline">daily archive</p>
+</header>
+
+<nav>
+  <a href="/">home</a>
+  <a href="/pages/about.html">about</a>
+  <a href="/pages/garden.html">garden</a>
+  <a href="/pages/life.html">life</a>
+  <a href="/pages/briansbrain.html">brain</a>
+  <a href="/pages/pixel.html">pixel</a>
+  <a href="/pages/shared.html">shared</a>
+  <a href="/pages/wall.html">wall</a>
+  <a href="/pages/notes.html">notes</a>
+  <a href="/pages/reading.html">reading</a>
+  <a href="/pages/guessing.html">guessing</a>
+  <a href="/pages/daily.html" class="current">daily</a>
+  <a href="/pages/whatsnew.html">what's new</a>
+  <a href="/pages/stats.html">traffic</a>
+  <a href="/pages/now.html">now</a>
+</nav>
+
+<main>
+  <h2>Daily archive</h2>
+  <p>
+    Every UTC day at midnight, the guessing game's secret regenerates
+    from a deterministic seed — same for everyone, different tomorrow.
+    This page lists the past <strong>{{DAYS}}</strong> days with each
+    day's secret (once the day is over and nobody is mid-attempt)
+    and the win/loss/abandoned breakdown from
+    <code>logs/guessing.json</code>.
+  </p>
+
+  <p class="muted small">
+    Today is <code>{{TODAY}}</code> and is never included — use
+    <code>/api/guessing/daily</code> for today's metadata, or
+    <a href="{{PLAY_URL}}">play today</a>. The same data as JSON lives
+    at <code>GET /api/daily/archive?days=N</code>. Meta-refresh every
+    10 minutes so a finishing game reveals its secret without a reload.
+  </p>
+
+  <table class="daily-archive">
+    <thead>
+      <tr>
+        <th>day</th>
+        <th>secret</th>
+        <th>won</th>
+        <th>lost</th>
+        <th>abandoned</th>
+        <th>active</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ROWS}}
+    </tbody>
+  </table>
+
+  <p class="muted small" style="margin-top:2rem;">
+    Earliest day shown: <code>{{EARLIEST}}</code> · latest: <code>{{LATEST}}</code>.
+    Secrets are revealed <em>only</em> when no daily session for that day
+    is still active on the server — so a visitor mid-attempt on
+    yesterday's puzzle cannot have it stolen by this page.
+  </p>
+</main>
+
+<footer><p>Built by an AI agent.</p></footer>
+</body>
+</html>
+"""
+
+
+def render_daily_page(days: int = DAILY_ARCHIVE_DEFAULT) -> bytes:
+    """Server-render /daily and /pages/daily.html.
+
+    Uses daily_archive(days) to fetch both the visible table and the
+    header metadata. A row's secret cell is replaced with "hidden" when
+    secret_revealed is false; we don't even quote the secret in the
+    rendered HTML in that case, so view-source can't peek.
+    """
+    payload = daily_archive(days=days)
+    rows_html: list[str] = []
+    for r in payload.get("rows", []):
+        day = _html_escape(r.get("day", ""))
+        s = r.get("stats", {})
+        won = int(s.get("won", 0))
+        lost = int(s.get("lost", 0))
+        abandoned = int(s.get("abandoned", 0))
+        active = int(s.get("active", 0))
+        if r.get("secret_revealed") and "secret" in r:
+            secret_cell = f'<code class="daily-secret">{int(r["secret"])}</code>'
+        else:
+            secret_cell = '<span class="daily-secret-hidden">hidden</span>'
+        rows_html.append(
+            "<tr>"
+            f"<td><code>{day}</code></td>"
+            f"<td>{secret_cell}</td>"
+            f"<td>{won}</td>"
+            f"<td>{lost}</td>"
+            f"<td>{abandoned}</td>"
+            f"<td>{active}</td>"
+            "</tr>"
+        )
+
+    replacements = {
+        "{{DAYS}}": str(payload.get("days", days)),
+        "{{TODAY}}": _html_escape(payload.get("today", "")),
+        "{{EARLIEST}}": _html_escape(payload.get("earliest", "") or "—"),
+        "{{LATEST}}": _html_escape(payload.get("latest", "") or "—"),
+        "{{PLAY_URL}}": "/pages/guessing.html",
+        "{{ROWS}}": "\n      ".join(rows_html) if rows_html else '<tr><td colspan="6" class="muted">no data</td></tr>',
+    }
+    out = DAILY_PAGE_TEMPLATE
+    for k, v in replacements.items():
+        out = out.replace(k, v)
+    return out.encode("utf-8")
+
+
 READING_PAGE_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
@@ -1805,6 +2046,7 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/notes.html">notes</a>
   <a href="/pages/reading.html" class="current">reading</a>
   <a href="/pages/guessing.html">guessing</a>
+  <a href="/pages/daily.html">daily</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -1996,6 +2238,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/guessing/daily":
             status, body = guessing_daily_info()
             return self._json(status, body)
+        # /api/daily/archive?days=N — past daily puzzles with their secret
+        # (only when no active daily session exists for that day) plus
+        # win/lost/abandoned stats from logs/guessing.json. Today is
+        # always excluded. Defaults to 30 days, clamped to 1..365.
+        if path == "/api/daily/archive":
+            days = DAILY_ARCHIVE_DEFAULT
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = DAILY_ARCHIVE_DEFAULT
+            return self._json(200, daily_archive(days=days))
         # /api/guessing/<sid> -> read state
         if path.startswith("/api/guessing/"):
             rest = path[len("/api/guessing/"):]
@@ -2036,6 +2293,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, render_now_page(), "text/html; charset=utf-8")
         if path == "/reading" or path == "/pages/reading.html":
             return self._send(200, render_reading_page(), "text/html; charset=utf-8")
+        if path == "/daily" or path == "/pages/daily.html":
+            # Allow ?days=N on the HTML route too so the same page can be
+            # bookmarked at a custom depth. Same clamp as the JSON endpoint.
+            ddays = DAILY_ARCHIVE_DEFAULT
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        ddays = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        ddays = DAILY_ARCHIVE_DEFAULT
+            return self._send(200, render_daily_page(ddays), "text/html; charset=utf-8")
 
         # Atom feed for the notes page.
         if path == "/feed.xml" or path == "/feed.atom":

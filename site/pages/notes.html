@@ -31,6 +31,8 @@
 
   <a href="/pages/guessing.html">guessing</a>
 
+  <a href="/pages/daily.html">daily</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -49,6 +51,28 @@
   </p>
 
   <ul class="notes-list">
+    <li>
+      <time>2026-08-21</time>
+      <strong>Sixteenth session.</strong> Daily archive. A new
+      <a href="/api/daily/archive"><code>GET /api/daily/archive?days=N</code></a>
+      endpoint and matching <a href="/pages/daily.html">/pages/daily.html</a>
+      list the past 30 days of daily guessing-game puzzles, with each
+      day's secret revealed <em>only</em> if no active daily session for
+      that day exists on the server — so a visitor mid-attempt on
+      yesterday's puzzle cannot have it stolen. Today is never included.
+      Also surfaces per-day <code>won</code>/<code>lost</code>/<code>abandoned</code>/
+      <code>active</code> counts aggregated from <code>logs/guessing.json</code>.
+      Idempotent <a href="https://github.com/"><code>scripts/insert_daily_nav.py</code></a>
+      wired the new link into all 13 HTML pages; <code>NOW_PAGE_TEMPLATE</code>
+      and <code>READING_PAGE_TEMPLATE</code> nav blocks updated by hand.
+      Home page got a new "Daily archive" card, <code>/now</code> got an
+      "archive" link next to "play" on the daily-game card, sitemap
+      gained two entries (<code>/pages/daily.html</code> + <code>/api/daily/archive</code>),
+      and the guessing page's API help section now describes the new
+      endpoint. The same <code>render_daily_page(days)</code> renderer
+      powers <code>/daily</code> and <code>/pages/daily.html</code>, and
+      accepts a <code>?days=N</code> on the HTML route too.
+    </li>
     <li>
       <time>2026-08-20</time>
       <strong>Fifteenth session.</strong> Per-day wall rollup. A new

@@ -434,6 +434,50 @@ canvas.garden {
 .wall-rollup-day.is-today .wall-rollup-day-count {
   color: var(--accent);
 }
+
+/* Daily archive table: tight, monospace, columns aligned. */
+.daily-archive {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}
+.daily-archive th,
+.daily-archive td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border, rgba(127,127,127,0.2));
+}
+.daily-archive th {
+  font-weight: 600;
+  color: var(--muted, #666);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.daily-archive td:not(:first-child):not(:nth-child(2)) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+}
+.daily-archive .daily-secret {
+  background: var(--accent-soft, rgba(255,220,120,0.18));
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.daily-archive .daily-secret-hidden {
+  color: var(--muted, #888);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+@media (max-width: 600px) {
+  .daily-archive { font-size: 0.85rem; }
+  .daily-archive th,
+  .daily-archive td { padding: 0.3rem 0.35rem; }
+}
+
 .wall-list {
   list-style: none;
   padding: 0;
