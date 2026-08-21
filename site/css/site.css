@@ -493,6 +493,64 @@ canvas.garden {
   color: var(--accent);
 }
 
+/* Visitors per-day rollup — mirror of pv-rollup-* so the Visitors card
+   on /now lines up visually with the Wall + Pageviews strips above it.
+   Same shape (label / bar / count), same bar math (CSS custom property
+   drives the visual fill; server emits only the count). */
+.vs-rollup-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+.vs-rollup-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem 0.1rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  min-width: 0;
+}
+.vs-rollup-day.is-today {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.vs-rollup-day-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.vs-rollup-day-bar {
+  display: block;
+  width: 100%;
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.vs-rollup-day-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: calc(var(--bar, 0) * 8.33%);
+  background: var(--accent);
+  display: block;
+}
+.vs-rollup-day-count {
+  font-weight: 700;
+  color: var(--fg);
+}
+.vs-rollup-day.is-today .vs-rollup-day-count {
+  color: var(--accent);
+}
+
 /* Daily archive table: tight, monospace, columns aligned. */
 .daily-archive {
   width: 100%;
@@ -883,5 +941,7 @@ code.rollover-chip {
   .wall-rollup-day-bar { height: 3px; }
   .pv-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .pv-rollup-day-bar { height: 3px; }
+  .vs-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
+  .vs-rollup-day-bar { height: 3px; }
   code.rollover-chip { font-size: 0.8rem; min-width: 4.6rem; }
 }

@@ -1298,6 +1298,154 @@ def pageviews_summary(days: int = 7) -> dict:
     }
 
 
+def visitors_summary(days: int = 7) -> dict:
+    """Roll up visitor-counter samples by UTC day.
+
+    Each sample in logs/stats.jsonl is a one-line JSON record shaped like
+    {"t": <unix>, "v": <visit counter value or null>}, written once every
+    time we refresh the public visitor counter. There can be dozens per
+    hour on a quiet site, so the file grows quickly — keep the rollup
+    bounded by STATS_LOG_MAX_LINES.
+
+    Each day bucket carries:
+      - latest_v    : the most recent v seen on that UTC day (the closest
+                      thing we have to "what was the counter at the end
+                      of the day")
+      - peak_v      : the largest v seen on that UTC day
+      - peak_at_unix: unix second of the peak sample
+      - sample_count: how many samples landed in this bucket
+
+    Bucketing uses UTC midnight, not the visitor's local clock, so the
+    numbers don't shift based on who's looking — same convention as
+    wall_summary, pageviews_summary, and daily_archive.
+
+    Returns:
+      {
+        "samples": int,                # total samples in the on-disk log
+        "today_day_key": str,          # YYYY-MM-DD for today
+        "today_latest_v": int|None,    # latest v on today's UTC day
+        "today_peak_v": int|None,      # peak v on today's UTC day
+        "today_peak_at_unix": int|0,   # unix of today's peak sample
+        "today_change_vs_yesterday": int|None,
+        "since_unix": int,             # unix seconds for start of today UTC
+        "days": int,                   # clamp(1, 365) value used for by_day
+        "by_day": [                    # oldest first; today is the last entry
+          {"day": str, "latest_v": int|None, "peak_v": int|None,
+           "peak_at_unix": int|0, "sample_count": int},
+          ...
+        ],
+      }
+
+    Reads logs/stats.jsonl on every call (capped at STATS_LOG_MAX_LINES),
+    so it's cheap and side-effect-free — same shape as the other summary
+    helpers.
+    """
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 365))
+
+    rows: list = []
+    try:
+        with STATS_LOG.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    s = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(s, dict):
+                    continue
+                t = s.get("t")
+                if isinstance(t, int):
+                    rows.append(s)
+    except OSError:
+        rows = []
+
+    now = int(time.time())
+    today_key = _day_key_utc(now)
+    today_midnight = now - (now % 86400)
+
+    # Per-day bucketing. We track latest-by-t (insertion order is t-ordered
+    # because we always append, so the last write wins for the same t)
+    # and peak-by-v.
+    latest_per_day: dict[str, dict] = {}
+    peak_per_day: dict[str, dict] = {}
+    count_per_day: dict[str, int] = {}
+    today_latest_v = None
+    today_latest_t = 0
+    today_peak_v = None
+    today_peak_t = 0
+
+    for s in rows:
+        t = s.get("t")
+        v = s.get("v")
+        key = _day_key_utc(t)
+        count_per_day[key] = count_per_day.get(key, 0) + 1
+        # Latest wins by t (insertion order on disk is t-ordered, but be
+        # defensive against out-of-order writes).
+        prev_latest = latest_per_day.get(key)
+        if prev_latest is None or t > int(prev_latest.get("t") or 0):
+            latest_per_day[key] = {"t": t, "v": v}
+        # Peak wins by v (only over non-null v — a null v means the
+        # counter was unreachable at that sample, so don't let it "win"
+        # the peak comparison).
+        if v is not None:
+            prev_peak = peak_per_day.get(key)
+            if prev_peak is None or v > int(prev_peak.get("v") or 0):
+                peak_per_day[key] = {"t": t, "v": v}
+        if t >= today_midnight:
+            if t > today_latest_t:
+                today_latest_t = t
+                today_latest_v = v
+            if v is not None and (today_peak_v is None or v > today_peak_v):
+                today_peak_v = v
+                today_peak_t = t
+
+    by_day = []
+    for offset in range(days - 1, -1, -1):
+        day_ts = today_midnight - offset * 86400
+        key = _day_key_utc(day_ts)
+        latest = latest_per_day.get(key)
+        peak = peak_per_day.get(key)
+        item = {
+            "day": key,
+            "sample_count": count_per_day.get(key, 0),
+        }
+        if latest is not None:
+            item["latest_v"] = latest.get("v")
+        if peak is not None:
+            item["peak_v"] = peak.get("v")
+            item["peak_at_unix"] = int(peak.get("t") or 0)
+        by_day.append(item)
+
+    # Change vs yesterday's latest: positive = today's latest is higher.
+    # Yesterday is the second-to-last bucket in the by_day list (when
+    # days >= 2); None if yesterday had no samples.
+    today_change = None
+    if len(by_day) >= 2:
+        y = by_day[-2]
+        today_v = latest_per_day.get(today_key, {}).get("v")
+        y_v = y.get("latest_v")
+        if today_v is not None and y_v is not None:
+            today_change = int(today_v) - int(y_v)
+
+    return {
+        "samples": len(rows),
+        "today_day_key": today_key,
+        "today_latest_v": today_latest_v,
+        "today_peak_v": today_peak_v,
+        "today_peak_at_unix": today_peak_t,
+        "today_change_vs_yesterday": today_change,
+        "since_unix": today_midnight,
+        "days": days,
+        "by_day": by_day,
+    }
+
+
 def git_last_commit() -> dict:
     """Return the timestamp and short sha of HEAD, if available."""
     return git_recent_commits(1)[0] if git_recent_commits(1) else {"committed_at": "", "sha": "", "subject": ""}
@@ -1476,6 +1624,7 @@ def now_snapshot() -> dict:
     shared = shared_get_full()
     pv = pageview_summary()
     pv_roll = pageviews_summary(7)
+    vis_roll = visitors_summary(7)
     _, daily_body = guessing_daily_info()
 
     wall_last = wall["entries"][0] if wall.get("entries") else None
@@ -1508,6 +1657,16 @@ def now_snapshot() -> dict:
         "pageviews_today_count": pv_roll.get("today_count"),
         "pageviews_today_day_key": pv_roll.get("today_day_key"),
         "pageviews_by_day": pv_roll.get("by_day", []),
+        # Per-day visitor-counter rollup: today's latest + today's peak +
+        # day-over-day change + last-7-days buckets. The full payload is
+        # at /api/visitors/summary. Same shape as wall_today_count /
+        # wall_by_day so /now can render the same strip pattern.
+        "visitors_today_latest": vis_roll.get("today_latest_v"),
+        "visitors_today_day_key": vis_roll.get("today_day_key"),
+        "visitors_today_peak": vis_roll.get("today_peak_v"),
+        "visitors_today_peak_at": vis_roll.get("today_peak_at_unix"),
+        "visitors_today_change": vis_roll.get("today_change_vs_yesterday"),
+        "visitors_by_day": vis_roll.get("by_day", []),
         # Daily puzzle metadata. We deliberately do NOT include the
         # secret — only the day_key, range, budget. Visitors who want
         # to play hit /pages/guessing.html.
@@ -1823,6 +1982,10 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <h3>Visitors</h3>
       <p class="big">{{VISITS}}</p>
       <p class="muted small">{{VISITS_NOTE}}</p>
+      <p class="muted small">{{VISITORS_TODAY_LINE}}</p>
+      <ul class="vs-rollup-strip" aria-label="Last 7 days">
+        {{VISITORS_BY_DAY}}
+      </ul>
     </div>
     <div class="card">
       <h3>Uptime</h3>
@@ -1906,6 +2069,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/shared</code> ·
       <code>/api/pageviews</code> ·
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
+      <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
       <code>/api/reading</code>
     </p>
   </section>
@@ -2011,6 +2175,88 @@ def render_now_page() -> bytes:
     else:
         pv_by_day_html = '<li class="muted">no data</li>'
 
+    # Visitors per-day strip — mirror of the pv/wall strips but driven
+    # by logs/stats.jsonl. The big number on the Visitors card is the
+    # current external counter (visits), so we don't change that; the
+    # line under it tells you today's internal latest + day-over-day
+    # change + today's peak, and the strip below shows the latest-v
+    # per UTC day for the last 7 days.
+    vs_today_day_key = snap.get("visitors_today_day_key") or _day_key_utc(snap["now"])
+    vs_today_latest = snap.get("visitors_today_latest")
+    vs_today_peak = snap.get("visitors_today_peak")
+    vs_today_peak_at = snap.get("visitors_today_peak_at") or 0
+    vs_today_change = snap.get("visitors_today_change")
+    vs_by_day = snap.get("visitors_by_day") or []
+
+    # Build the small "today" line under the visitor counter.
+    # Format: "today (YYYY-MM-DD) · +N from yesterday · peak M at HH:MM"
+    # or fall back to a quieter line if we don't have enough data.
+    line_bits = []
+    line_bits.append(f"today ({vs_today_day_key})")
+    if vs_today_change is not None and vs_today_change != 0:
+        if vs_today_change > 0:
+            line_bits.append(f"+{vs_today_change} from yesterday")
+        else:
+            # Unicode minus for negative values so it visually balances
+            # the plus sign on positive values.
+            line_bits.append(f"−{abs(vs_today_change)} from yesterday")
+    if vs_today_peak is not None and vs_today_peak_at:
+        from datetime import datetime, timezone
+        try:
+            peak_iso = datetime.fromtimestamp(int(vs_today_peak_at), tz=timezone.utc).strftime("%H:%M UTC")
+        except Exception:
+            peak_iso = "—"
+        line_bits.append(f"peak {vs_today_peak} at {peak_iso}")
+    visitors_today_line = " · ".join(line_bits)
+
+    if vs_by_day:
+        # Bar is keyed off latest_v per day. Some days may have latest_v
+        # of None (no samples landed that day), which we render with no
+        # bar and "—". The strip math lives in CSS (--bar: 0..12) so we
+        # only emit the count.
+        # Compute max only over non-None latest_v so a quiet day doesn't
+        # get normalised to 0 against itself.
+        numeric = [int(d.get("latest_v")) for d in vs_by_day if d.get("latest_v") is not None]
+        max_latest = max(numeric) if numeric else 0
+        vs_strip_cells = []
+        for d in vs_by_day:
+            day = d.get("day") or ""
+            short = day[5:] if len(day) >= 10 else day  # MM-DD
+            latest_v = d.get("latest_v")
+            if latest_v is None:
+                bar = 0
+                count_text = "—"
+                tip = ""
+            else:
+                latest_v = int(latest_v)
+                bar = 0 if max_latest == 0 else max(1, round((latest_v / max_latest) * 12))
+                count_text = str(latest_v)
+                peak_v = d.get("peak_v")
+                peak_at = d.get("peak_at_unix") or 0
+                # Tooltip: latest on the day, plus peak + the time it hit
+                # if peak is different from latest (peak == latest when
+                # the day never went higher than its closing value).
+                parts = [f"latest: {latest_v}"]
+                if peak_v is not None and int(peak_v) != latest_v and peak_at:
+                    from datetime import datetime, timezone
+                    try:
+                        peak_iso = datetime.fromtimestamp(int(peak_at), tz=timezone.utc).strftime("%H:%M UTC")
+                    except Exception:
+                        peak_iso = ""
+                    parts.append(f"peak: {int(peak_v)} at {peak_iso}")
+                tip = ' title="' + _html_escape(" · ".join(parts)) + '"'
+            is_today = " is-today" if day == vs_today_day_key else ""
+            vs_strip_cells.append(
+                f'<li class="vs-rollup-day{is_today}"{tip}>'
+                f'<span class="vs-rollup-day-label">{_html_escape(short)}</span>'
+                f'<span class="vs-rollup-day-bar" style="--bar:{bar}"></span>'
+                f'<span class="vs-rollup-day-count">{count_text}</span>'
+                f'</li>'
+            )
+        vs_by_day_html = "\n        ".join(vs_strip_cells)
+    else:
+        vs_by_day_html = '<li class="muted">no data</li>'
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -2059,6 +2305,8 @@ def render_now_page() -> bytes:
         "{{PV_TODAY_COUNT}}": str(pv_today_count),
         "{{PV_TODAY_DAY_KEY}}": _html_escape(pv_today_day_key),
         "{{PV_BY_DAY}}": pv_by_day_html,
+        "{{VISITORS_TODAY_LINE}}": _html_escape(visitors_today_line),
+        "{{VISITORS_BY_DAY}}": vs_by_day_html,
         "{{DAILY_DAY_KEY}}": _html_escape(daily_day_key),
         "{{DAILY_RANGE}}": _html_escape(daily_range_str),
         "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
@@ -2431,6 +2679,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         days = 7
             return self._json(200, pageviews_summary(days=days))
+        # /api/visitors/summary?days=N — per-day rollup of the internal
+        # visitor-counter samples (logs/stats.jsonl). Same shape as
+        # /api/wall/summary and /api/pageviews/summary: a continuous
+        # `days`-long UTC-day window, oldest first, today last.
+        if path == "/api/visitors/summary":
+            days = 7
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = 7
+            return self._json(200, visitors_summary(days=days))
         if path == "/api/guessing":
             mode = ""
             if qs:

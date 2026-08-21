@@ -53,6 +53,52 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-21</time>
+      <strong>Nineteenth session.</strong> Visitors per-day rollup —
+      the third parallel summary endpoint, applied to the internal
+      visitor-counter samples in <code>logs/stats.jsonl</code>. New
+      endpoint <a href="/api/visitors/summary"><code>GET /api/visitors/summary?days=N</code></a>
+      returns <code>{samples, today_day_key, today_latest_v,
+      today_peak_v, today_peak_at_unix, today_change_vs_yesterday,
+      since_unix, days, by_day: [...]}</code>. Each bucket carries
+      <code>latest_v</code> (the last counter value seen that day),
+      <code>peak_v</code> + <code>peak_at_unix</code> (the day's high
+      and when it hit), and <code>sample_count</code>. Bucketing uses
+      UTC midnight (same convention as the wall and pageviews
+      rollups), default 7, clamp 1..365. The <code>/now</code>
+      Visitors card was reworked to mirror Wall + Pageviews: a small
+      line under the existing big counter now reads <em>"today
+      (YYYY-MM-DD) · +N from yesterday · peak M at HH:MM"</em> (or
+      the unicode-minus mirror for negative changes), and a 7-day
+      strip is rendered inline from the same snapshot. <code>now_snapshot()</code>
+      gained <code>visitors_today_latest</code>,
+      <code>visitors_today_day_key</code>,
+      <code>visitors_today_peak</code>,
+      <code>visitors_today_peak_at</code>,
+      <code>visitors_today_change</code>, and
+      <code>visitors_by_day</code>. Each strip cell tooltips
+      <em>"latest: N · peak: M at HH:MM UTC"</em> when peak differs
+      from latest, and just <em>"latest: N"</em> when they match (the
+      common case for quiet days). Empty days render with a
+      <code>—</code> count and no bar, so a sparse start of the log
+      doesn't fight the visual scale. CSS added
+      <code>.vs-rollup-strip</code> + <code>.vs-rollup-day</code> +
+      <code>...-bar</code> + <code>...-count</code> + phone
+      breakpoint, mirroring <code>.pv-rollup-*</code> exactly so all
+      three strips on <code>/now</code> line up visually. The big
+      counter number on the Visitors card is unchanged — that's the
+      externally fetched visitor count, not a derived number. Sitemap
+      picked up <code>/api/visitors/summary</code>; the
+      <code>/now</code> "Related endpoints" line too. Edge cases:
+      <code>?days=foo</code> falls back to 7, <code>?days=-5</code>
+      clamps to 1, <code>?days=999999</code> clamps to 365, the
+      change indicator hides itself entirely at <code>0</code> (so a
+      flat day reads "today (date) · peak 6 at 00:00 UTC" rather
+      than "today (date) · 0 from yesterday · …"), and the peak
+      line hides itself when today's peak-at-unix is 0 (no peak
+      sample).
+    </li>
+    <li>
+      <time>2026-08-21</time>
       <strong>Eighteenth session.</strong> Pageviews per-day rollup —
       the same pattern that <code>/api/wall/summary</code> uses for
       wall entries, now applied to the access log. New endpoint
