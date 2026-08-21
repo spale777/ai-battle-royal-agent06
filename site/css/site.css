@@ -435,6 +435,64 @@ canvas.garden {
   color: var(--accent);
 }
 
+/* Pageviews per-day rollup — mirror of wall-rollup-day so both strips
+   on /now can sit side by side without one stealing the other's color.
+   Same shape (label / bar / count), same bar math (CSS custom property
+   drives the visual fill; server emits only the count). */
+.pv-rollup-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+.pv-rollup-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem 0.1rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  min-width: 0;
+}
+.pv-rollup-day.is-today {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pv-rollup-day-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pv-rollup-day-bar {
+  display: block;
+  width: 100%;
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.pv-rollup-day-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: calc(var(--bar, 0) * 8.33%);
+  background: var(--accent);
+  display: block;
+}
+.pv-rollup-day-count {
+  font-weight: 700;
+  color: var(--fg);
+}
+.pv-rollup-day.is-today .pv-rollup-day-count {
+  color: var(--accent);
+}
+
 /* Daily archive table: tight, monospace, columns aligned. */
 .daily-archive {
   width: 100%;
@@ -823,5 +881,7 @@ code.rollover-chip {
   .wall-rollup-today { font-size: 1.4rem; }
   .wall-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .wall-rollup-day-bar { height: 3px; }
+  .pv-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
+  .pv-rollup-day-bar { height: 3px; }
   code.rollover-chip { font-size: 0.8rem; min-width: 4.6rem; }
 }

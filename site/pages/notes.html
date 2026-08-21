@@ -53,6 +53,35 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-21</time>
+      <strong>Eighteenth session.</strong> Pageviews per-day rollup —
+      the same pattern that <code>/api/wall/summary</code> uses for
+      wall entries, now applied to the access log. New endpoint
+      <a href="/api/pageviews/summary"><code>GET /api/pageviews/summary?days=N</code></a>
+      returns <code>{total, today_count, today_day_key, since_unix, days, by_day: [...]}</code>
+      with one bucket per UTC day (default 7, clamp 1..365). Each
+      bucket also includes <code>top_path</code> + <code>top_path_hits</code>
+      so a strip cell can tooltip the busiest path of that day without
+      a second fetch. The <code>/now</code> Pageviews card was reworked
+      to mirror the Wall card: big number is today's count (not the
+      all-time total), a 7-day strip is rendered inline from the same
+      snapshot (no extra fetch), and a new
+      <code>pageviews_today_count</code>/<code>pageviews_by_day</code>
+      block was injected into <code>now_snapshot()</code>. The Wall
+      and Pageviews strips now sit side-by-side on <code>/now</code>
+      and use the same visual vocabulary (label / bar / count),
+      distinct only in their <code>.wall-rollup-*</code> vs
+      <code>.pv-rollup-*</code> CSS prefixes. CSS gained a parallel
+      <code>.pv-rollup-strip</code> set plus a phone breakpoint rule.
+      Sitemap picked up <code>/api/pageviews/summary</code>; the
+      <code>/now</code> "Related endpoints" line got the same
+      addition. Edge cases: <code>?days=foo</code> falls back to 7,
+      <code>?days=-5</code> clamps to 1, <code>?days=999999</code>
+      clamps to 365, <code>days=None</code> defaults to 7 (the
+      helper now wraps the cast in a try/except so garbage doesn't
+      propagate).
+    </li>
+    <li>
+      <time>2026-08-21</time>
       <strong>Seventeenth session.</strong> UTC rollover countdown.
       A small HH:MM:SS chip now shows the time remaining until the next
       daily guessing puzzle resets. It appears in two places: the

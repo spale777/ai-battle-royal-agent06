@@ -1219,6 +1219,85 @@ def pageview_summary() -> dict:
     }
 
 
+def pageviews_summary(days: int = 7) -> dict:
+    """Roll up pageviews by UTC day.
+
+    Same shape as wall_summary: a continuous `days`-long window ending
+    today (oldest first), one bucket per day, plus a small today_count.
+
+    Bucketing uses UTC midnight, not the visitor's local clock, so the
+    numbers don't shift based on who's looking. Same convention as
+    wall_summary and daily_archive.
+
+    Returns:
+      {
+        "total": int,           # all pageviews in the on-disk log
+        "today_count": int,     # pageviews on the current UTC day
+        "today_day_key": str,   # YYYY-MM-DD for today
+        "since_unix": int,      # unix seconds for start of today UTC
+        "days": int,            # clamp(1, 365) value used for by_day
+        "by_day": [             # oldest first; today is the last entry
+          {"day": str, "count": int, "unique_paths": int,
+           "top_path": str?, "top_path_hits": int?},
+          ...
+        ],
+      }
+
+    `top_path` / `top_path_hits` make tooltips useful on a strip widget
+    without needing a second fetch — same trick as wall_summary's
+    last_message / last_name.
+    """
+    rows = read_pageviews()
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 365))
+    now = int(time.time())
+    today_key = _day_key_utc(now)
+    today_midnight = now - (now % 86400)
+
+    # Per-day bucketing. We track hits + unique paths + a top path so
+    # the strip widget can hover on each cell.
+    counts: dict[str, int] = {}
+    path_counts: dict[str, dict[str, int]] = {}
+    today_count = 0
+    for r in rows:
+        ts = r.get("ts")
+        if ts is None:
+            continue
+        key = _day_key_utc(ts)
+        counts[key] = counts.get(key, 0) + 1
+        bucket = path_counts.setdefault(key, {})
+        p = r.get("path") or ""
+        bucket[p] = bucket.get(p, 0) + 1
+        if ts >= today_midnight:
+            today_count += 1
+
+    by_day = []
+    for offset in range(days - 1, -1, -1):
+        day_ts = today_midnight - offset * 86400
+        key = _day_key_utc(day_ts)
+        c = counts.get(key, 0)
+        per_path = path_counts.get(key, {})
+        unique = len(per_path)
+        item = {"day": key, "count": c, "unique_paths": unique}
+        if per_path:
+            top_path = max(per_path.items(), key=lambda kv: (kv[1], kv[0]))
+            item["top_path"] = top_path[0]
+            item["top_path_hits"] = top_path[1]
+        by_day.append(item)
+
+    return {
+        "total": len(rows),
+        "today_count": today_count,
+        "today_day_key": today_key,
+        "since_unix": today_midnight,
+        "days": days,
+        "by_day": by_day,
+    }
+
+
 def git_last_commit() -> dict:
     """Return the timestamp and short sha of HEAD, if available."""
     return git_recent_commits(1)[0] if git_recent_commits(1) else {"committed_at": "", "sha": "", "subject": ""}
@@ -1396,6 +1475,7 @@ def now_snapshot() -> dict:
     wall_roll = wall_summary(7)
     shared = shared_get_full()
     pv = pageview_summary()
+    pv_roll = pageviews_summary(7)
     _, daily_body = guessing_daily_info()
 
     wall_last = wall["entries"][0] if wall.get("entries") else None
@@ -1421,6 +1501,13 @@ def now_snapshot() -> dict:
         "shared_events": len(shared.get("events", [])),
         "pageviews_total": pv.get("total", 0),
         "pageviews_top": pv.get("top", [])[:5],
+        # Per-day pageview rollup: today's count + last-7-days buckets.
+        # Parallel to wall_today_count / wall_by_day so /now can render
+        # the same strip shape for both kinds of activity. The full
+        # payload is at /api/pageviews/summary.
+        "pageviews_today_count": pv_roll.get("today_count"),
+        "pageviews_today_day_key": pv_roll.get("today_day_key"),
+        "pageviews_by_day": pv_roll.get("by_day", []),
         # Daily puzzle metadata. We deliberately do NOT include the
         # secret — only the day_key, range, budget. Visitors who want
         # to play hit /pages/guessing.html.
@@ -1765,8 +1852,13 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
     </div>
     <div class="card">
       <h3>Pageviews</h3>
-      <p class="big">{{PV_TOTAL}}</p>
-      <p class="muted small">across {{PV_UNIQUE}} paths</p>
+      <p class="big">{{PV_TODAY_COUNT}}</p>
+      <p class="muted small">
+        today ({{PV_TODAY_DAY_KEY}}) · {{PV_TOTAL}} total · {{PV_UNIQUE}} unique paths
+      </p>
+      <ul class="pv-rollup-strip" aria-label="Last 7 days">
+        {{PV_BY_DAY}}
+      </ul>
     </div>
     <div class="card">
       <h3>Daily game</h3>
@@ -1813,6 +1905,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/wall/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/shared</code> ·
       <code>/api/pageviews</code> ·
+      <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/reading</code>
     </p>
   </section>
@@ -1885,6 +1978,39 @@ def render_now_page() -> bytes:
     else:
         wall_by_day_html = '<li class="muted">no data</li>'
 
+    pv_today_count = snap.get("pageviews_today_count") or 0
+    pv_today_day_key = snap.get("pageviews_today_day_key") or _day_key_utc(snap["now"])
+    pv_by_day = snap.get("pageviews_by_day") or []
+    # Same strip shape as the Wall rollup, but with pv-rollup class
+    # names so the two strips can be styled independently. Each cell
+    # also gets a tooltip showing the busiest path of that day so a
+    # visitor can hover to see what's trending.
+    if pv_by_day:
+        max_count = max((d.get("count") or 0) for d in pv_by_day) or 1
+        pv_strip_cells = []
+        for d in pv_by_day:
+            day = d.get("day") or ""
+            short = day[5:] if len(day) >= 10 else day  # MM-DD
+            count = int(d.get("count") or 0)
+            bar = 0 if count == 0 else max(1, round((count / max_count) * 12))
+            is_today = " is-today" if day == pv_today_day_key else ""
+            tip = ""
+            if d.get("top_path"):
+                tip = (
+                    f" title=\"{_html_escape(d.get('top_path') or '')}"
+                    f" ({int(d.get('top_path_hits') or 0)})\""
+                )
+            pv_strip_cells.append(
+                f'<li class="pv-rollup-day{is_today}"{tip}>'
+                f'<span class="pv-rollup-day-label">{_html_escape(short)}</span>'
+                f'<span class="pv-rollup-day-bar" style="--bar:{bar}"></span>'
+                f'<span class="pv-rollup-day-count">{count}</span>'
+                f'</li>'
+            )
+        pv_by_day_html = "\n        ".join(pv_strip_cells)
+    else:
+        pv_by_day_html = '<li class="muted">no data</li>'
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -1930,6 +2056,9 @@ def render_now_page() -> bytes:
         "{{SHARED_EVENTS}}": str(snap["shared_events"]),
         "{{PV_TOTAL}}": str(snap["pageviews_total"]),
         "{{PV_UNIQUE}}": str(pv_unique),
+        "{{PV_TODAY_COUNT}}": str(pv_today_count),
+        "{{PV_TODAY_DAY_KEY}}": _html_escape(pv_today_day_key),
+        "{{PV_BY_DAY}}": pv_by_day_html,
         "{{DAILY_DAY_KEY}}": _html_escape(daily_day_key),
         "{{DAILY_RANGE}}": _html_escape(daily_range_str),
         "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
@@ -2288,6 +2417,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, wall_summary(days=days))
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
+        # /api/pageviews/summary?days=N — per-day rollup, same shape as
+        # /api/wall/summary. Default 7, clamp 1..365. Cheap to recompute
+        # (parse the access log once, bucket in O(N)).
+        if path == "/api/pageviews/summary":
+            days = 7
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = 7
+            return self._json(200, pageviews_summary(days=days))
         if path == "/api/guessing":
             mode = ""
             if qs:
