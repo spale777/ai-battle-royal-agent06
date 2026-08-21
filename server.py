@@ -890,8 +890,13 @@ def guessing_daily_info() -> tuple[int, dict]:
     A small `prev_day_key` / `next_day_key` is included for symmetry
     (neighbours on the calendar), but neither of those numbers is
     leaked by this endpoint either.
+
+    Also surfaces `seconds_until_rollover` and `rollover_at_iso` so a
+    client can render a HH:MM:SS countdown to the next daily puzzle
+    without an extra round-trip to `/api/now`.
     """
     day_key = _day_key_utc()
+    now = int(time.time())
     # Build neighbouring day_keys via UTC arithmetic — strptime +
     # timedelta keeps us clear of month/year edge cases.
     try:
@@ -912,6 +917,8 @@ def guessing_daily_info() -> tuple[int, dict]:
         "play_url": "/pages/guessing.html",
         "prev_day_key": prev_key,
         "next_day_key": next_key,
+        "seconds_until_rollover": _seconds_until_utc_midnight(now),
+        "rollover_at_iso": _iso_local(_next_utc_midnight_unix(now)),
     }
 
 
@@ -1337,6 +1344,43 @@ def _iso_local(ts: int) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(ts))
 
 
+def _next_utc_midnight_unix(now: int) -> int:
+    """Unix second of the next 00:00 UTC after `now`.
+
+    If `now` is exactly on a UTC midnight, this returns the *next* one
+    (so the answer is always strictly > `now`). Uses calendar.timegm
+    to avoid local-time interference.
+    """
+    import calendar
+    gm = time.gmtime(now)
+    # (year, month, day, 0, 0, 0) of the next day in UTC.
+    y, m, d = gm.tm_year, gm.tm_mon, gm.tm_mday
+    # day-of-year arithmetic via Python datetime keeps us clear of
+    # month/year boundaries and DST (which doesn't apply in UTC anyway,
+    # but the dateutil-free path is portable).
+    from datetime import datetime, timedelta, timezone
+    cur = datetime(y, m, d, tzinfo=timezone.utc)
+    nxt = cur + timedelta(days=1)
+    return calendar.timegm(nxt.timetuple())
+
+
+def _seconds_until_utc_midnight(now: int) -> int:
+    """Seconds between `now` and the next 00:00 UTC. Always >= 1."""
+    return max(1, _next_utc_midnight_unix(now) - now)
+
+
+def _format_hms(total_seconds: int) -> str:
+    """Format a positive second count as HH:MM:SS (zero-padded).
+
+    Hours can exceed 99 in principle (a server clock far in the future
+    from the response, say) — we just keep the natural width.
+    """
+    total_seconds = max(0, int(total_seconds))
+    h, rem = divmod(total_seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
 def now_snapshot() -> dict:
     """A consolidated snapshot of the site at this exact moment.
 
@@ -1384,6 +1428,12 @@ def now_snapshot() -> dict:
         "daily_range": daily_body.get("range"),
         "daily_budget": daily_body.get("budget"),
         "daily_play_url": daily_body.get("play_url"),
+        # How many seconds remain until the UTC midnight that flips the
+        # daily puzzle to the next day. Always in [1, 86400]; computed
+        # once per request so the JSON is self-contained and the client
+        # just has to subtract elapsed time.
+        "seconds_until_rollover": _seconds_until_utc_midnight(now),
+        "rollover_at_iso": _iso_local(_next_utc_midnight_unix(now)),
     }
 
 
@@ -1726,8 +1776,19 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
         <a href="{{DAILY_PLAY_URL}}">play</a> ·
         <a href="/pages/daily.html">archive</a>
       </p>
+      <p class="rollover-line muted small">
+        Next daily in
+        <code class="rollover-chip"
+              id="rollover-now"
+              data-seconds="{{DAILY_SECONDS}}"
+              data-rollover-at="{{DAILY_ROLLOVER_AT}}"
+              title="Rollover at {{DAILY_ROLLOVER_AT}}">--:--:--</code>
+        <span class="muted">(00:00 UTC)</span>
+      </p>
     </div>
   </section>
+
+  <script src="/js/rollover.js" defer></script>
 
   <section>
     <h2>Recent commits</h2>
@@ -1873,6 +1934,8 @@ def render_now_page() -> bytes:
         "{{DAILY_RANGE}}": _html_escape(daily_range_str),
         "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
         "{{DAILY_PLAY_URL}}": _html_escape(daily_play_url),
+        "{{DAILY_SECONDS}}": str(snap.get("seconds_until_rollover") or 0),
+        "{{DAILY_ROLLOVER_AT}}": _html_escape(snap.get("rollover_at_iso") or ""),
         "{{COMMITS}}": "\n      ".join(commit_lines) if commit_lines else '<li class="muted">no commits</li>',
     }
     out = NOW_PAGE_TEMPLATE

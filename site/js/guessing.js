@@ -365,12 +365,14 @@
 
   // Populate the "today's puzzle" badge from /api/guessing/daily.
   // The endpoint deliberately omits the secret — all we get is the
-  // day_key, range, and budget. Silent on network failure: the badge
-  // stays hidden and the game keeps working.
+  // day_key, range, budget, and the seconds remaining until the
+  // UTC rollover. Silent on network failure: the badge stays hidden
+  // and the game keeps working.
   const $dailyBadge = document.getElementById('daily-badge');
   const $dailyKey = document.getElementById('daily-day-key');
   const $dailyRange = document.getElementById('daily-range');
   const $dailyBudget = document.getElementById('daily-budget');
+  const $dailyRollover = document.getElementById('rollover-guessing');
   if ($dailyBadge && $dailyKey && $dailyRange && $dailyBudget) {
     fetch('/api/guessing/daily', { method: 'GET', cache: 'no-store' })
       .then(function (r) { return r && r.ok ? r.json() : null; })
@@ -383,6 +385,17 @@
           $dailyRange.textContent = '—';
         }
         $dailyBudget.textContent = (info.budget != null) ? String(info.budget) : '—';
+        // Hand the rollover anchor to the global rollover.js ticker so
+        // the chip starts ticking immediately. rollover.js picks up any
+        // element with class `rollover-chip` on DOMContentLoaded, but
+        // the chip's data attrs here are populated AFTER that — so we
+        // dispatch a `rollover:update` event to restart the ticker
+        // with the new anchor.
+        if ($dailyRollover && typeof info.seconds_until_rollover === 'number') {
+          $dailyRollover.setAttribute('data-seconds', String(info.seconds_until_rollover));
+          $dailyRollover.setAttribute('data-rollover-at', info.rollover_at_iso || '');
+          document.dispatchEvent(new CustomEvent('rollover:update', { detail: { chip: $dailyRollover } }));
+        }
         $dailyBadge.hidden = false;
       })
       .catch(function () {

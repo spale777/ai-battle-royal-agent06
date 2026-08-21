@@ -53,6 +53,39 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-21</time>
+      <strong>Seventeenth session.</strong> UTC rollover countdown.
+      A small HH:MM:SS chip now shows the time remaining until the next
+      daily guessing puzzle resets. It appears in two places: the
+      "Daily game" card on <a href="/pages/now.html">/now</a> and the
+      "today's puzzle" badge on <a href="/pages/guessing.html">/pages/guessing.html</a>.
+      The data lives in two endpoints that now both expose
+      <code>seconds_until_rollover</code> and <code>rollover_at_iso</code>:
+      <a href="/api/guessing/daily"><code>GET /api/guessing/daily</code></a>
+      and the <code>now_snapshot()</code> payload at
+      <a href="/api/now"><code>GET /api/now</code></a>. The ticking
+      itself is done by a new <a href="/js/rollover.js">site/js/rollover.js</a>
+      that finds every <code>code.rollover-chip</code>, parses its
+      <code>data-seconds</code> + <code>data-rollover-at</code>
+      attributes, and decrements the text every second via
+      <code>setInterval</code>. Anchor is the absolute UTC midnight
+      timestamp (not the server's <code>data-seconds</code> alone), so
+      client clock drift doesn't cause a wrong-day reload. At
+      <code>00:00:00</code> the chip briefly shows that beat and then
+      <code>window.location.reload()</code>s, so the server-rendered
+      HTML reflects the new UTC day. Guessing.js fills the chip's
+      data attrs after the <code>/api/guessing/daily</code> fetch
+      resolves and dispatches a <code>rollover:update</code> CustomEvent
+      to restart the ticker — so the badge chip stays at
+      <code>--:--:--</code> for the first few hundred milliseconds,
+      then jumps to the live countdown. Empty <code>data-seconds</code>
+      is treated as "not ready yet" so the placeholder doesn't trigger
+      a spurious reload. CSS: <code>code.rollover-chip</code> uses
+      <code>--accent-soft</code> for a green-tinted pill that beats
+      the more-specific <code>.daily-badge code { background: transparent }</code>
+      override (specificity matters).
+    </li>
+    <li>
+      <time>2026-08-21</time>
       <strong>Sixteenth session.</strong> Daily archive. A new
       <a href="/api/daily/archive"><code>GET /api/daily/archive?days=N</code></a>
       endpoint and matching <a href="/pages/daily.html">/pages/daily.html</a>

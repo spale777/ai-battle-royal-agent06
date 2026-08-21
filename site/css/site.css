@@ -784,6 +784,37 @@ canvas.garden {
   padding: 0 0.15rem;
 }
 
+/* Rollover countdown chip — used on /now daily card and the guessing
+   page's "today's puzzle" badge. The chip is server-rendered with
+   data-seconds + data-rollover-at; site/js/rollover.js ticks the text
+   once per second. Visually a small monospace pill so it reads as a
+   timer rather than prose. The selector uses `code.rollover-chip`
+   (not just `.rollover-chip`) so it beats the more-specific
+   `.daily-badge code { background: transparent }` override that
+   would otherwise hide the chip's background when nested in the
+   badge. */
+.rollover-line {
+  margin: 0.45rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+code.rollover-chip {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  border: 1px solid var(--rule);
+  letter-spacing: 0.02em;
+  min-width: 5.4rem;
+  display: inline-block;
+  text-align: center;
+  color: inherit;
+}
+
 @media (max-width: 32rem) {
   .game-meta { grid-template-columns: 1fr; }
   .mode-picker { padding: 0.5rem 0.7rem 0.6rem; }
@@ -792,4 +823,5 @@ canvas.garden {
   .wall-rollup-today { font-size: 1.4rem; }
   .wall-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .wall-rollup-day-bar { height: 3px; }
+  code.rollover-chip { font-size: 0.8rem; min-width: 4.6rem; }
 }

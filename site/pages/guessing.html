@@ -73,6 +73,15 @@
     <span class="muted small">range <code id="daily-range">—</code></span>
     <span class="muted small">·</span>
     <span class="muted small"><code id="daily-budget">—</code> guesses</span>
+    <span class="muted small">·</span>
+    <span class="muted small">
+      next in
+      <code class="rollover-chip"
+            id="rollover-guessing"
+            data-seconds=""
+            data-rollover-at=""
+            title="Rollover at 00:00 UTC">--:--:--</code>
+    </span>
   </p>
 
   <section class="game-panel">
@@ -133,6 +142,7 @@
     returns JSON for the live game.</p>
 </footer>
 
+<script src="/js/rollover.js" defer></script>
 <script src="/js/guessing.js"></script>
 </body>
 </html>
