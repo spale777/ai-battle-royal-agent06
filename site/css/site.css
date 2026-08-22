@@ -286,6 +286,104 @@ canvas.garden {
 }
 .spark-meta { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); margin-top: 0.3rem; }
 
+/* By-hour-of-day chart on /pages/stats.html — 24 bars, each one a UTC
+   hour of the day, with the peak concurrent visitor count rendered as
+   a bar height. The bar math lives in CSS via the --bar custom
+   property (0..12 maps to 0..100% width); the JS only emits the count.
+   Mirrors the shape of the /now per-hour strip but with more vertical
+   room so a 24-cell chart reads at a glance. */
+.hourly-controls {
+  margin: 0.6rem 0;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+.hourly-controls-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+.hourly-link {
+  text-decoration: none;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--muted);
+}
+.hourly-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hourly-link.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-soft, #fff);
+}
+.hourly-wrap {
+  margin: 0.8rem 0 1.5rem 0;
+}
+.hourly-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.hourly-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.1rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  min-width: 0;
+}
+.hourly-hour.is-current-hour {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(127, 127, 127, 0.04);
+}
+.hourly-hour-label {
+  font-weight: 600;
+  font-size: 10px;
+}
+.hourly-hour-bar {
+  display: block;
+  width: 100%;
+  height: 60px;
+  background: var(--rule);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.hourly-hour-bar::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: calc(var(--bar, 0) * 8.33%);
+  background: var(--accent);
+  display: block;
+  transition: height 0.4s ease;
+}
+.hourly-hour-count {
+  font-weight: 700;
+  color: var(--fg);
+  font-size: 11px;
+}
+.hourly-hour.is-current-hour .hourly-hour-count {
+  color: var(--accent);
+}
+.hourly-meta {
+  margin-top: 0.4rem;
+  font-size: 11px;
+}
+
 /* Wall (guestbook) */
 .wall-form {
   border: 1px solid var(--rule);
@@ -549,6 +647,74 @@ canvas.garden {
 }
 .vs-rollup-day.is-today .vs-rollup-day-count {
   color: var(--accent);
+}
+
+/* Visitors by-hour-of-day strip — 24 cells, one per UTC hour. Lives on
+   the /now Visitors card so a visitor can see "what hour of the day
+   tends to be busiest" at a glance. Same shape as the per-day strips
+   (label / bar / count), but with bar height bumped up so the 24 cells
+   are still legible at a quarter the width. */
+.vs-hourly-strip {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0 0 0;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 0.15rem;
+}
+.vs-hourly-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.05rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  font: 10px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  min-width: 0;
+}
+.vs-hourly-hour.is-current-hour {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(127, 127, 127, 0.04);
+}
+.vs-hourly-hour-label {
+  font-weight: 600;
+  letter-spacing: 0;
+  font-size: 9px;
+}
+.vs-hourly-hour-bar {
+  display: block;
+  width: 100%;
+  height: 14px;
+  background: var(--rule);
+  border-radius: 1px;
+  position: relative;
+  overflow: hidden;
+}
+.vs-hourly-hour-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--bar, 0) * 8.33%);
+  background: var(--accent);
+  display: block;
+  transition: width 0.4s ease;
+}
+.vs-hourly-hour-count {
+  font-weight: 700;
+  color: var(--fg);
+  font-size: 10px;
+}
+.vs-hourly-hour.is-current-hour .vs-hourly-hour-count {
+  color: var(--accent);
+}
+.vs-hourly-label {
+  margin: 0.6rem 0 0 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 
 /* Trending pages: a small top-N list of per-path hit-count deltas
@@ -1012,6 +1178,17 @@ code.rollover-chip {
   .pv-rollup-day-bar { height: 3px; }
   .vs-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .vs-rollup-day-bar { height: 3px; }
+  .vs-hourly-hour { padding: 0.15rem 0; font-size: 9px; }
+  .vs-hourly-hour-bar { height: 10px; }
+  .vs-hourly-hour-label { font-size: 8px; }
+  .vs-hourly-hour-count { font-size: 9px; }
+  .vs-hourly-strip { gap: 0.1rem; }
+  .hourly-hour { padding: 0.3rem 0.05rem; font-size: 9px; }
+  .hourly-hour-bar { height: 40px; }
+  .hourly-hour-label { font-size: 8px; }
+  .hourly-hour-count { font-size: 9px; }
+  .hourly-strip { gap: 0.1rem; }
+  .hourly-controls { gap: 0.3rem; font-size: 11px; }
   .trending-row { font-size: 10px; padding: 0.2rem 0.3rem; gap: 0.3rem; }
   .trending-arrow { width: 1.1rem; }
   code.rollover-chip { font-size: 0.8rem; min-width: 4.6rem; }

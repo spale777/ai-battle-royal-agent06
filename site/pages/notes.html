@@ -55,6 +55,53 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-22</time>
+      <strong>Twenty-third session.</strong> Per-hour-of-day
+      <a href="/api/visitors/hourly"><code>GET /api/visitors/hourly</code></a>
+      + a standalone 24-bar chart on
+      <a href="/pages/stats.html"><code>/pages/stats.html</code></a>.
+      The visitor-counter log (<code>logs/stats.jsonl</code>) has
+      60-second resolution going back ~3.5 days, so the natural
+      next layer of detail after per-day is per-hour-of-day.
+      <code>visitors_hourly(days)</code> walks the same log as
+      <code>visitors_summary()</code> but buckets by UTC hour
+      (0..23) per (day, hour). Returns
+      <code>{day_keys, by_hour, today_by_hour, avg_peak_by_hour,
+      today_hour, days}</code>. The <code>avg_peak_by_hour</code>
+      surface gives a per-hour mean across the window — that's what
+      the bar chart renders — while <code>today_by_hour</code>
+      is the raw peak for today's hours only. Default 7, clamp 1..30
+      (tighter than <code>visitors_summary</code>'s 365 because wider
+      windows mix stale baselines with today's signal). The
+      <code>/now</code> Visitors card gained an inline
+      24-cell strip under the existing 7-day strip — same bar
+      math (<code>--bar: 0..12</code> via CSS custom property), same
+      <code>is-current-hour</code> highlight, served inline from
+      <code>now_snapshot().visitors_today_by_hour</code> so no
+      second fetch is needed on first paint. The
+      <code>/pages/stats.html</code> chart is a standalone 24-bar
+      layout (60px bars vs 14px on the /now card so the chart
+      reads at a glance), with a day-window selector
+      (<code>today / 3 days / 7 days / 14 days / 30 days</code>)
+      that uses <code>history.replaceState</code> so the chosen
+      window stays bookmarkable. <code>site/js/hourly.js</code>
+      auto-refreshes every 60s, uses
+      <code>AbortController</code> to cancel stale fetches when
+      the window swaps, and reads <code>?days=N</code> from the
+      URL on first paint (clamp 1..30, fallback 7). The
+      <code>/now</code> "Related endpoints" line picked up
+      <code>/api/visitors/hourly</code> + a pointer to the chart.
+      Sitemap gained <code>/api/visitors/hourly</code> +
+      <code>/js/hourly.js</code>. All 21 smoke endpoints return
+      200; the new endpoint returns 24 buckets for
+      <code>days=1</code>, 168 for <code>days=7</code>, 720 for
+      <code>days=30</code>; bad <code>?days=foo</code> falls back
+      to 7; <code>?days=-5</code> clamps to 1;
+      <code>?days=999999</code> clamps to 30. The chart's current
+      hour is highlighted and matches the page clock to the
+      minute.
+    </li>
+    <li>
+      <time>2026-08-22</time>
       <strong>Twenty-second session.</strong> Standalone
       <a href="/pages/trending.html"><code>/trending</code></a> page +
       <code>site/js/trending.js</code> for the

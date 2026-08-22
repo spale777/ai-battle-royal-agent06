@@ -1573,6 +1573,179 @@ def visitors_summary(days: int = 7) -> dict:
     }
 
 
+def visitors_hourly(days: int = 7) -> dict:
+    """Roll up visitor-counter samples by UTC hour-of-day.
+
+    Where visitors_summary() buckets by UTC day, this function buckets by
+    hour-of-day (0..23 UTC), repeated across `days` consecutive UTC days.
+    Each (day, hour) cell carries its peak concurrent visitor count (v)
+    and sample count; per-hour-of-day aggregates are then derived by
+    averaging (and max-ing) across the days.
+
+    Use case: "what time of day is this site busiest?" The peak concurrent
+    visitor counter can move up and down a lot within a single day, so
+    aggregating the *peak per hour* (not the average) is the right shape —
+    we want to know the worst-case occupancy in each hour, not the steady
+    state. The site has very few concurrent visitors on a quiet day, so
+    the chart naturally highlights whichever hour saw the most activity
+    across the window.
+
+    Bucketing uses UTC midnight, not the visitor's local clock. If a
+    future feature wants local-time bucketing, it has to be opt-in (the
+    visitor can pass their own offset) so three visitors don't see three
+    different "today" values — same caveat as visitors_summary().
+
+    Args:
+      days: clamp 1..30 (default 7). Wider windows dilute today's signal
+            against an older low-traffic baseline, so the cap is tighter
+            than visitors_summary's 365.
+
+    Returns:
+      {
+        "since_unix": int,            # unix seconds for start of today UTC
+        "days": int,                  # clamp(1, 30) value used
+        "day_keys": [str, ...],       # YYYY-MM-DD, oldest first, today last
+        "by_hour": [                  # 24 entries (0..23 UTC), oldest hour
+                      repeated; today is the last entry
+          {
+            "hour": int,              # 0..23
+            "peak_v": int|None,       # highest v across all samples in
+                                       # (day, hour); None when no samples
+            "sample_count": int,      # samples in (day, hour)
+          },
+          ...
+        ],
+        "today_by_hour": [            # 24 entries (0..23 UTC) for today
+          {"hour": 0, "peak_v": int|None, "sample_count": int},
+          ...
+        ],
+        "today_hour": int,            # current UTC hour (0..23)
+        "today_partial": bool,        # True when today isn't complete yet
+        "avg_peak_by_hour": [         # mean of peak_v across `days` for
+                                       # each hour 0..23 (None if no data)
+          {"hour": 0, "avg_peak": float|None, "max_peak": int|None,
+           "days_with_data": int},
+          ...
+        ],
+      }
+
+    Reads logs/stats.jsonl on every call (capped at STATS_LOG_MAX_LINES),
+    so it's cheap and side-effect-free. Same defensive shape as
+    visitors_summary: a bad `days` value falls back to the default.
+    """
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 30))
+
+    rows: list = []
+    try:
+        with STATS_LOG.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    s = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(s, dict):
+                    continue
+                t = s.get("t")
+                if isinstance(t, int):
+                    rows.append(s)
+    except OSError:
+        rows = []
+
+    now = int(time.time())
+    today_key = _day_key_utc(now)
+    today_midnight = now - (now % 86400)
+    today_hour = (now - today_midnight) // 3600
+
+    # Per-(day, hour) buckets. Use nested dicts keyed by (day_key, hour).
+    # Skip null v for the peak comparison so a counter-unreachable reading
+    # doesn't win the peak for that hour. Track sample_count regardless
+    # so a thin hour still shows up as "60 samples, peak None".
+    peak_per_cell: dict[tuple, int] = {}
+    count_per_cell: dict[tuple, int] = {}
+
+    for s in rows:
+        t = s.get("t")
+        v = s.get("v")
+        key = _day_key_utc(t)
+        # UTC hour of day: position within the UTC day (t mod 86400).
+        hour = (int(t) % 86400) // 3600
+        cell = (key, hour)
+        count_per_cell[cell] = count_per_cell.get(cell, 0) + 1
+        if v is not None:
+            prev = peak_per_cell.get(cell)
+            if prev is None or v > prev:
+                peak_per_cell[cell] = int(v)
+
+    # Build by_hour list: oldest day first, today last; 24 hours per day.
+    by_hour: list = []
+    for offset in range(days - 1, -1, -1):
+        day_ts = today_midnight - offset * 86400
+        day_key = _day_key_utc(day_ts)
+        for h in range(24):
+            cell = (day_key, h)
+            peak = peak_per_cell.get(cell)
+            entry = {
+                "hour": h,
+                "day": day_key,
+                "sample_count": count_per_cell.get(cell, 0),
+            }
+            if peak is not None:
+                entry["peak_v"] = peak
+            by_hour.append(entry)
+
+    # today_by_hour: same shape but only today.
+    today_by_hour: list = []
+    for h in range(24):
+        cell = (today_key, h)
+        peak = peak_per_cell.get(cell)
+        entry = {"hour": h, "sample_count": count_per_cell.get(cell, 0)}
+        if peak is not None:
+            entry["peak_v"] = peak
+        today_by_hour.append(entry)
+
+    # avg_peak_by_hour: aggregate across all `days` for each hour 0..23.
+    avg_peak_by_hour: list = []
+    for h in range(24):
+        peaks = []
+        max_peak = None
+        days_with_data = 0
+        for offset in range(days - 1, -1, -1):
+            day_ts = today_midnight - offset * 86400
+            day_key = _day_key_utc(day_ts)
+            peak = peak_per_cell.get((day_key, h))
+            if peak is not None:
+                peaks.append(peak)
+                if max_peak is None or peak > max_peak:
+                    max_peak = peak
+                days_with_data += 1
+        entry: dict = {"hour": h, "days_with_data": days_with_data}
+        if peaks:
+            entry["avg_peak"] = round(sum(peaks) / len(peaks), 2)
+            entry["max_peak"] = max_peak
+        avg_peak_by_hour.append(entry)
+
+    day_keys = [_day_key_utc(today_midnight - offset * 86400)
+                for offset in range(days - 1, -1, -1)]
+
+    return {
+        "since_unix": today_midnight,
+        "days": days,
+        "day_keys": day_keys,
+        "by_hour": by_hour,
+        "today_by_hour": today_by_hour,
+        "today_hour": today_hour,
+        "today_partial": True,  # always partial — the helper is called live
+        "avg_peak_by_hour": avg_peak_by_hour,
+    }
+
+
 def activity_summary(days: int = 7) -> dict:
     """Combined per-day rollup of activity across all sources.
 
@@ -1796,6 +1969,7 @@ def now_snapshot() -> dict:
     pv = pageview_summary()
     pv_roll = pageviews_summary(7)
     vis_roll = visitors_summary(7)
+    vis_hourly_today = visitors_hourly(1)
     _, daily_body = guessing_daily_info()
 
     wall_last = wall["entries"][0] if wall.get("entries") else None
@@ -1843,6 +2017,14 @@ def now_snapshot() -> dict:
         "visitors_today_peak_at": vis_roll.get("today_peak_at_unix"),
         "visitors_today_change": vis_roll.get("today_change_vs_yesterday"),
         "visitors_by_day": vis_roll.get("by_day", []),
+        # Per-hour-of-day today slice — peak concurrent visitor count per
+        # UTC hour (0..23). Drives the inline 24-cell strip on /now and
+        # the standalone hourly chart on /pages/stats.html. Cheap because
+        # it reuses the same logs/stats.jsonl parse as visitors_summary.
+        # Full payload (per-(day,hour) + avg_peak_by_hour) at
+        # /api/visitors/hourly.
+        "visitors_today_by_hour": vis_hourly_today.get("today_by_hour", []),
+        "visitors_today_hour": vis_hourly_today.get("today_hour"),
         # Daily puzzle metadata. We deliberately do NOT include the
         # secret — only the day_key, range, budget. Visitors who want
         # to play hit /pages/guessing.html.
@@ -2163,6 +2345,10 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <ul class="vs-rollup-strip" aria-label="Last 7 days">
         {{VISITORS_BY_DAY}}
       </ul>
+      <p class="muted small vs-hourly-label">by hour of day (today)</p>
+      <ul class="vs-hourly-strip" aria-label="Today by hour of day">
+        {{VISITORS_BY_HOUR}}
+      </ul>
     </div>
     <div class="card">
       <h3>Uptime</h3>
@@ -2258,6 +2444,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N; standalone page at <a href="/trending"><code>/trending</code></a>) ·
       <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
+      <code>/api/visitors/hourly</code> (per-hour-of-day visitor rollup, ?days=N; standalone chart on <a href="/pages/stats.html"><code>/pages/stats.html</code></a>) ·
       <code>/api/activity/summary</code> (combined wall+pageviews+visitors rollup, ?days=N) ·
       <code>/api/reading</code>
     </p>
@@ -2446,6 +2633,45 @@ def render_now_page() -> bytes:
     else:
         vs_by_day_html = '<li class="muted">no data</li>'
 
+    # Visitors by-hour-of-day strip (today only). 24 cells, one per UTC
+    # hour 0..23, each carrying the peak concurrent visitor count for
+    # that hour. The current hour gets an `is-current-hour` highlight so
+    # the visitor can spot where they are in the day. Empty hours show a
+    # short grey bar with "—" so a partial day doesn't fight the scale.
+    vs_by_hour = snap.get("visitors_today_by_hour") or []
+    vs_today_hour = snap.get("visitors_today_hour")
+    if vs_by_hour:
+        # Bar math: 0..12 across the max(peak_v) we actually saw today,
+        # so a quiet day with peak 2 still fills half the bar (bar=6).
+        numeric = [int(h.get("peak_v")) for h in vs_by_hour if h.get("peak_v") is not None]
+        max_peak = max(numeric) if numeric else 0
+        vs_hour_cells = []
+        for h in vs_by_hour:
+            hour_int = int(h.get("hour", 0))
+            peak_v = h.get("peak_v")
+            if peak_v is None:
+                bar = 0
+                count_text = "—"
+                tip = ""
+            else:
+                peak_v = int(peak_v)
+                bar = 0 if max_peak == 0 else max(1, round((peak_v / max_peak) * 12))
+                count_text = str(peak_v)
+                tip = f' title="{_html_escape(str(hour_int))}:00 UTC · peak {peak_v}"'
+            is_current = " is-current-hour" if (vs_today_hour is not None and hour_int == vs_today_hour) else ""
+            # Label: "00".."23" zero-padded, then a short count.
+            label = f"{hour_int:02d}"
+            vs_hour_cells.append(
+                f'<li class="vs-hourly-hour{is_current}"{tip}>'
+                f'<span class="vs-hourly-hour-label">{label}</span>'
+                f'<span class="vs-hourly-hour-bar" style="--bar:{bar}"></span>'
+                f'<span class="vs-hourly-hour-count">{count_text}</span>'
+                f'</li>'
+            )
+        vs_by_hour_html = "\n        ".join(vs_hour_cells)
+    else:
+        vs_by_hour_html = '<li class="muted">no data</li>'
+
     # Trending pages — top movers today-vs-yesterday. Reuses the shared
     # row renderer so a tweak to arrow vocabulary / tooltip shape only
     # lands in one place (the standalone /trending page uses the same
@@ -2507,6 +2733,7 @@ def render_now_page() -> bytes:
         "{{PV_BY_DAY}}": pv_by_day_html,
         "{{VISITORS_TODAY_LINE}}": _html_escape(visitors_today_line),
         "{{VISITORS_BY_DAY}}": vs_by_day_html,
+        "{{VISITORS_BY_HOUR}}": vs_by_hour_html,
         "{{DAILY_DAY_KEY}}": _html_escape(daily_day_key),
         "{{DAILY_RANGE}}": _html_escape(daily_range_str),
         "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
@@ -3130,6 +3357,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         days = 7
             return self._json(200, visitors_summary(days=days))
+        # /api/visitors/hourly?days=N — per-(day,hour) rollup of the
+        # visitor-counter samples, bucketed by UTC hour-of-day (0..23).
+        # Returns the raw peak_v + sample_count per (day, hour), a
+        # today_by_hour slice for "today only", and an avg_peak_by_hour
+        # aggregate across the window for "by hour of day" charts.
+        # Default 7, clamp 1..30 (tighter than visitors_summary's 365
+        # because wider windows mix stale baselines with today's signal).
+        if path == "/api/visitors/hourly":
+            days = 7
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = 7
+            return self._json(200, visitors_hourly(days=days))
         # /api/activity/summary?days=N — combined per-day rollup of wall,
         # pageviews, and visitors in one response. Same shape per source
         # as the individual endpoints; thin glue over wall_summary /

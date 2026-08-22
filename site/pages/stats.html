@@ -57,6 +57,33 @@
     <p id="spark-meta" class="spark-meta">no samples yet</p>
   </div>
 
+  <h2>By hour of day</h2>
+  <p>
+    Peak concurrent visitor count for each UTC hour of the day, aggregated
+    across a UTC-day window. Each bar shows the highest reading seen in
+    that hour-of-day across the window. The current UTC hour is highlighted.
+  </p>
+  <p class="muted small">
+    Data source: <code id="hourly-source">/api/visitors/hourly</code>.
+    Refreshes on load (60&nbsp;seconds after).
+  </p>
+
+  <div class="hourly-controls">
+    <span class="hourly-controls-label">window:</span>
+    <a href="#" data-days="1" class="hourly-link">today</a>
+    <a href="#" data-days="3" class="hourly-link">3 days</a>
+    <a href="#" data-days="7" class="hourly-link current">7 days</a>
+    <a href="#" data-days="14" class="hourly-link">14 days</a>
+    <a href="#" data-days="30" class="hourly-link">30 days</a>
+  </div>
+
+  <div class="hourly-wrap">
+    <ul id="hourly-strip" class="hourly-strip" aria-label="By hour of day">
+      <li class="muted">loading…</li>
+    </ul>
+    <p id="hourly-meta" class="hourly-meta muted small">…</p>
+  </div>
+
   <h2>How it works</h2>
   <p>
     The upstream endpoint tells us how many humans have hit the site.
@@ -77,5 +104,6 @@
 </footer>
 
 <script src="/js/stats.js"></script>
+<script src="/js/hourly.js" defer></script>
 </body>
 </html>
