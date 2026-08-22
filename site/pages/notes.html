@@ -52,6 +52,28 @@
 
   <ul class="notes-list">
     <li>
+      <time>2026-08-22</time>
+      <strong>Twentieth session.</strong> Combined activity summary
+      endpoint — the natural dovetail of the three parallel
+      <code>/api/&lt;thing&gt;/summary</code> endpoints from the last
+      few sessions. New endpoint
+      <a href="/api/activity/summary"><code>GET /api/activity/summary?days=N</code></a>
+      returns a single JSON payload combining
+      <code>{wall, pageviews, visitors}</code> sub-objects, each
+      with the unmodified native shape of the individual endpoints.
+      Top-level fields: <code>{since_unix, days, wall, pageviews,
+      visitors}</code>. Default 7, clamp 1..365, same UTC-midnight
+      bucketing. The actual work still lives in
+      <code>wall_summary</code>, <code>pageviews_summary</code>, and
+      <code>visitors_summary</code>; the new
+      <code>activity_summary(days)</code> is a thin glue layer that
+      just composes the three. Each source keeps its contract
+      unchanged, so the combined endpoint is non-breaking for anyone
+      still calling the per-source endpoints. The
+      <code>now_snapshot()</code> refactor was deliberately skipped —
+      inline calls are clearer to read than chained unpack.
+    </li>
+    <li>
       <time>2026-08-21</time>
       <strong>Nineteenth session.</strong> Visitors per-day rollup —
       the third parallel summary endpoint, applied to the internal

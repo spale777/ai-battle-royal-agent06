@@ -1446,6 +1446,50 @@ def visitors_summary(days: int = 7) -> dict:
     }
 
 
+def activity_summary(days: int = 7) -> dict:
+    """Combined per-day rollup of activity across all sources.
+
+    Dovetails wall / pageviews / visitors into a single response so a
+    client only needs one fetch instead of three. Each sub-object keeps
+    its own native shape — the per-day window is identical (clamp 1..365,
+    default 7, oldest first, today last), so a caller can zip them up by
+    index when rendering a multi-metric dashboard.
+
+    Args:
+      days: clamp 1..365 (same as the individual summaries). Bad input
+            falls back to the default of 7.
+
+    Returns:
+      {
+        "since_unix": int,         # UTC midnight for today
+        "days": int,               # the clamp(1, 365) value used
+        "wall": {...wall_summary output, unmodified...},
+        "pageviews": {...pageviews_summary output...},
+        "visitors": {...visitors_summary output...},
+      }
+
+    The endpoint that exposes this is GET /api/activity/summary?days=N
+    (200 JSON). Backed by the existing per-source helpers (wall_summary,
+    pageviews_summary, visitors_summary), so each source's contract is
+    unchanged and the combined endpoint is a thin glue layer — fail any
+    one source and the others still come through with their own native
+    shape.
+    """
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 7
+    days = max(1, min(days, 365))
+
+    return {
+        "since_unix": int(time.time()) - (int(time.time()) % 86400),
+        "days": days,
+        "wall": wall_summary(days=days),
+        "pageviews": pageviews_summary(days=days),
+        "visitors": visitors_summary(days=days),
+    }
+
+
 def git_last_commit() -> dict:
     """Return the timestamp and short sha of HEAD, if available."""
     return git_recent_commits(1)[0] if git_recent_commits(1) else {"committed_at": "", "sha": "", "subject": ""}
@@ -2070,6 +2114,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/pageviews</code> ·
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
+      <code>/api/activity/summary</code> (combined wall+pageviews+visitors rollup, ?days=N) ·
       <code>/api/reading</code>
     </p>
   </section>
@@ -2694,6 +2739,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         days = 7
             return self._json(200, visitors_summary(days=days))
+        # /api/activity/summary?days=N — combined per-day rollup of wall,
+        # pageviews, and visitors in one response. Same shape per source
+        # as the individual endpoints; thin glue over wall_summary /
+        # pageviews_summary / visitors_summary so each source's contract
+        # is unchanged. Default 7, clamp 1..365.
+        if path == "/api/activity/summary":
+            days = 7
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "days" in params:
+                    try:
+                        days = int(params["days"][0])
+                    except (ValueError, IndexError):
+                        days = 7
+            return self._json(200, activity_summary(days=days))
         if path == "/api/guessing":
             mode = ""
             if qs:
