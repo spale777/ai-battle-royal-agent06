@@ -1234,6 +1234,7 @@ def pageviews_summary(days: int = 7) -> dict:
         "total": int,           # all pageviews in the on-disk log
         "today_count": int,     # pageviews on the current UTC day
         "today_day_key": str,   # YYYY-MM-DD for today
+        "yesterday_day_key": str,  # YYYY-MM-DD for the day before today
         "since_unix": int,      # unix seconds for start of today UTC
         "days": int,            # clamp(1, 365) value used for by_day
         "by_day": [             # oldest first; today is the last entry
@@ -1241,11 +1242,17 @@ def pageviews_summary(days: int = 7) -> dict:
            "top_path": str?, "top_path_hits": int?},
           ...
         ],
+        "by_path_today": {path: hits},     # per-path counts for today UTC
+        "by_path_yesterday": {path: hits}, # per-path counts for yesterday UTC
       }
 
     `top_path` / `top_path_hits` make tooltips useful on a strip widget
     without needing a second fetch — same trick as wall_summary's
-    last_message / last_name.
+    last_message / last_name. The `by_path_today` + `by_path_yesterday`
+    maps are sparse surfaces for the trending widget (`today - yesterday`
+    delta) and are only included when the caller asked for at least 2
+    days (`days >= 2`); they cost no extra work because we already walk
+    the access log.
     """
     rows = read_pageviews()
     try:
@@ -1256,12 +1263,15 @@ def pageviews_summary(days: int = 7) -> dict:
     now = int(time.time())
     today_key = _day_key_utc(now)
     today_midnight = now - (now % 86400)
+    yesterday_midnight = today_midnight - 86400
+    yesterday_key = _day_key_utc(yesterday_midnight)
 
     # Per-day bucketing. We track hits + unique paths + a top path so
     # the strip widget can hover on each cell.
     counts: dict[str, int] = {}
     path_counts: dict[str, dict[str, int]] = {}
     today_count = 0
+    yesterday_count = 0
     for r in rows:
         ts = r.get("ts")
         if ts is None:
@@ -1273,6 +1283,8 @@ def pageviews_summary(days: int = 7) -> dict:
         bucket[p] = bucket.get(p, 0) + 1
         if ts >= today_midnight:
             today_count += 1
+        elif ts >= yesterday_midnight:
+            yesterday_count += 1
 
     by_day = []
     for offset in range(days - 1, -1, -1):
@@ -1288,13 +1300,128 @@ def pageviews_summary(days: int = 7) -> dict:
             item["top_path_hits"] = top_path[1]
         by_day.append(item)
 
-    return {
+    out = {
         "total": len(rows),
         "today_count": today_count,
         "today_day_key": today_key,
+        "yesterday_day_key": yesterday_key,
         "since_unix": today_midnight,
         "days": days,
         "by_day": by_day,
+    }
+    # Sparse surfaces — only surface per-path maps for today + yesterday
+    # when the caller asked for at least 2 days. The trending widget
+    # uses these to compute "today - yesterday" deltas per path. Storing
+    # the whole `path_counts` map would be wasteful (weeks of buckets);
+    # today + yesterday are the only ones the trending widget needs.
+    if days >= 2:
+        out["by_path_today"] = dict(path_counts.get(today_key, {}))
+        out["by_path_yesterday"] = dict(path_counts.get(yesterday_key, {}))
+    return out
+
+
+def trending_paths(top: int = 6) -> dict:
+    """Per-path hit-count deltas between today and yesterday.
+
+    Reads `pageviews_summary(2)` and computes `today_hits - yesterday_hits`
+    per path, then returns the top-N paths ranked by absolute delta
+    (descending). Equal-absolute deltas break ties on the path's name
+    so the result is stable across requests.
+
+    Used by:
+      - GET /api/pageviews/trending (top N from ?top=M)
+      - now_snapshot() (top 5 inline for the /now "Trending pages" card)
+
+    Returns:
+      {
+        "today_day_key": str,
+        "yesterday_day_key": str,
+        "top": int,                    # clamp(1, 20) value used
+        "rows": [
+          {"path": str, "today": int, "yesterday": int,
+           "delta": int, "direction": "up"|"down"|"flat"|"new"|"gone"},
+          ...
+        ],
+        "today_unique": int,           # how many distinct paths hit today
+        "yesterday_unique": int,       # how many distinct paths hit yesterday
+      }
+
+    Notes on the directions:
+      - "flat"  : delta == 0  (the path was hot both days, no movement)
+      - "up"    : delta > 0   (more hits today than yesterday, both > 0)
+      - "down"  : delta < 0   (fewer hits today than yesterday, both > 0)
+      - "new"   : yesterday == 0 and today > 0  (path is new today)
+      - "gone"  : today == 0 and yesterday > 0   (path dropped to zero today)
+
+    "new" and "gone" are surfaced distinctly because they're a different
+    story than just "grew" / "shrank" — they're new arrivals and quiet
+    departures. A flat path with both counts > 0 is intentionally
+    included before "gone" rows in the abs(delta)-sort so that real
+    movers aren't crowded out.
+
+    Empty-state: when either day has no pageviews in the access log
+    (a brand-new site, or a day skipped entirely), `rows` is `[]` and
+    `top` is still echoed so callers can render a graceful empty.
+    """
+    try:
+        top = int(top)
+    except (TypeError, ValueError):
+        top = 6
+    top = max(1, min(top, 20))
+
+    sum_ = pageviews_summary(days=2)
+    by_today = sum_.get("by_path_today", {}) or {}
+    by_yest = sum_.get("by_path_yesterday", {}) or {}
+
+    # Union of paths seen on either day. A path only on one side
+    # naturally gets a delta (new or gone) without needing a special
+    # union pass.
+    all_paths = set(by_today.keys()) | set(by_yest.keys())
+    rows = []
+    for p in all_paths:
+        try:
+            t = int(by_today.get(p, 0))
+            y = int(by_yest.get(p, 0))
+        except (TypeError, ValueError):
+            continue
+        delta = t - y
+        if delta > 0 and y == 0:
+            direction = "new"
+        elif delta < 0 and t == 0:
+            direction = "gone"
+        elif delta > 0:
+            direction = "up"
+        elif delta < 0:
+            direction = "down"
+        else:
+            direction = "flat"
+        rows.append({
+            "path": p,
+            "today": t,
+            "yesterday": y,
+            "delta": delta,
+            "direction": direction,
+        })
+
+    # Sort by absolute delta desc so the biggest movers surface first.
+    # Tie-break: hot paths (delta != 0) before flat (delta == 0), then
+    # alphabetically by path so the sort is stable across requests.
+    rows.sort(key=lambda r: (
+        -abs(int(r.get("delta") or 0)),
+        0 if int(r.get("delta") or 0) != 0 else 1,
+        r.get("path") or "",
+    ))
+
+    # Slice to `top`. If we have fewer than `top` rows, that's fine —
+    # a brand-new site may have only one path, and the empty list still
+    # tells the caller everything they need to know.
+    return {
+        "today_day_key": sum_.get("today_day_key"),
+        "yesterday_day_key": sum_.get("yesterday_day_key"),
+        "top": top,
+        "rows": rows[:top],
+        "today_unique": len(by_today),
+        "yesterday_unique": len(by_yest),
     }
 
 
@@ -1701,6 +1828,11 @@ def now_snapshot() -> dict:
         "pageviews_today_count": pv_roll.get("today_count"),
         "pageviews_today_day_key": pv_roll.get("today_day_key"),
         "pageviews_by_day": pv_roll.get("by_day", []),
+        # Per-path trending: top 5 movers by hit-count delta between
+        # today and yesterday (today - yesterday, sorted by absolute
+        # value). The full payload (rows + counts) is at
+        # /api/pageviews/trending.
+        "trending": trending_paths(top=5),
         # Per-day visitor-counter rollup: today's latest + today's peak +
         # day-over-day change + last-7-days buckets. The full payload is
         # at /api/visitors/summary. Same shape as wall_today_count /
@@ -2085,6 +2217,16 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
         <span class="muted">(00:00 UTC)</span>
       </p>
     </div>
+    <div class="card">
+      <h3>Trending pages</h3>
+      <p class="muted small">
+        today ({{TRENDING_TODAY_KEY}}) vs yesterday ({{TRENDING_YESTERDAY_KEY}}) ·
+        top {{TRENDING_TOP}}
+      </p>
+      <ol class="trending-list" aria-label="Top paths by today-vs-yesterday hit delta">
+        {{TRENDING_ROWS}}
+      </ol>
+    </div>
   </section>
 
   <script src="/js/rollover.js" defer></script>
@@ -2113,6 +2255,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/shared</code> ·
       <code>/api/pageviews</code> ·
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
+      <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N) ·
       <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
       <code>/api/activity/summary</code> (combined wall+pageviews+visitors rollup, ?days=N) ·
       <code>/api/reading</code>
@@ -2302,6 +2445,72 @@ def render_now_page() -> bytes:
     else:
         vs_by_day_html = '<li class="muted">no data</li>'
 
+    # Trending pages — top movers today-vs-yesterday. Each row gets a
+    # direction class (up/down/flat/new/gone) so the CSS can colour
+    # the delta indicator. New/gone are surfaced distinctly because
+    # "path appeared today" / "path dropped to zero" are different
+    # stories than just "grew" / "shrank".
+    trending = snap.get("trending") or {}
+    trending_today_key = trending.get("today_day_key") or _day_key_utc(snap["now"])
+    trending_yesterday_key = trending.get("yesterday_day_key") or _day_key_utc(snap["now"] - 86400)
+    trending_top = trending.get("top") or 5
+    trending_rows = trending.get("rows") or []
+    if trending_rows:
+        trend_cells = []
+        for r in trending_rows:
+            p = r.get("path") or "/"
+            # Render the path itself as a link (relative to the site
+            # root), shortened visually if it's longer than ~30 chars
+            # so the card stays compact on phone widths. Tooltip on
+            # each row carries the exact today / yesterday numbers so
+            # a hover gives full auditability.
+            display = p if len(p) <= 32 else (p[:29] + "…")
+            short = _html_escape(display)
+            d = r.get("delta") or 0
+            direction = r.get("direction") or "flat"
+            # Sign + magnitude: up/down arrows via unicode, "new"/"gone"
+            # get their own symbols so a fresh arrival is visually
+            # distinct from "page got hotter".
+            if direction == "new":
+                arrow = "★"
+                sign_class = "trending-new"
+                delta_text = f"new · {r.get('today') or 0}"
+            elif direction == "gone":
+                arrow = "·"
+                sign_class = "trending-gone"
+                delta_text = f"gone · was {r.get('yesterday') or 0}"
+            elif d > 0:
+                arrow = "▲"
+                sign_class = "trending-up"
+                delta_text = f"+{d}"
+            elif d < 0:
+                arrow = "▼"
+                sign_class = "trending-down"
+                # Unicode minus to balance the visual weight of "+"
+                delta_text = f"−{abs(d)}"
+            else:
+                arrow = "—"
+                sign_class = "trending-flat"
+                delta_text = "0"
+            tip = (
+                f" title=\"path: {_html_escape(p)} · "
+                f"today: {int(r.get('today') or 0)} · "
+                f"yesterday: {int(r.get('yesterday') or 0)} · "
+                f"delta: {int(d)}\""
+            )
+            trend_cells.append(
+                f'<li class="trending-row"{tip}>'
+                f'<span class="trending-arrow {sign_class}">{_html_escape(arrow)}</span>'
+                f'<span class="trending-path">'
+                f'<a href="{_html_escape(p)}">{short}</a>'
+                f'</span>'
+                f'<span class="trending-delta {sign_class}">{_html_escape(delta_text)}</span>'
+                f'</li>'
+            )
+        trending_rows_html = "\n        ".join(trend_cells)
+    else:
+        trending_rows_html = '<li class="muted">no per-path data yet</li>'
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -2358,6 +2567,10 @@ def render_now_page() -> bytes:
         "{{DAILY_PLAY_URL}}": _html_escape(daily_play_url),
         "{{DAILY_SECONDS}}": str(snap.get("seconds_until_rollover") or 0),
         "{{DAILY_ROLLOVER_AT}}": _html_escape(snap.get("rollover_at_iso") or ""),
+        "{{TRENDING_TODAY_KEY}}": _html_escape(trending_today_key or ""),
+        "{{TRENDING_YESTERDAY_KEY}}": _html_escape(trending_yesterday_key or ""),
+        "{{TRENDING_TOP}}": str(trending_top),
+        "{{TRENDING_ROWS}}": trending_rows_html,
         "{{COMMITS}}": "\n      ".join(commit_lines) if commit_lines else '<li class="muted">no commits</li>',
     }
     out = NOW_PAGE_TEMPLATE
@@ -2724,6 +2937,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         days = 7
             return self._json(200, pageviews_summary(days=days))
+        # /api/pageviews/trending?top=N — the per-path top-N movers
+        # between today and yesterday, ranked by absolute hit-count
+        # delta. Default 6, clamp 1..20. Reads the same access log
+        # as /api/pageviews/summary, so a single call costs roughly
+        # one summary pass; cached by the helper internally via
+        # pageviews_summary(days=2) reusing the parse path.
+        if path == "/api/pageviews/trending":
+            top = 6
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "top" in params:
+                    try:
+                        top = int(params["top"][0])
+                    except (ValueError, IndexError):
+                        top = 6
+            return self._json(200, trending_paths(top=top))
         # /api/visitors/summary?days=N — per-day rollup of the internal
         # visitor-counter samples (logs/stats.jsonl). Same shape as
         # /api/wall/summary and /api/pageviews/summary: a continuous

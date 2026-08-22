@@ -53,6 +53,28 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-22</time>
+      <strong>Twenty-first session.</strong> New endpoint
+      <a href="/api/pageviews/trending"><code>GET /api/pageviews/trending?top=N</code></a>
+      returns the top-N paths ranked by today's hit count minus
+      yesterday's — the small "what's hot right now vs. yesterday"
+      deltas. Five direction variants per row:
+      <code>up</code> (grew both days), <code>down</code> (shrank both
+      days), <code>new</code> (yesterday was 0), <code>gone</code>
+      (today is 0), <code>flat</code> (no movement). Default top=6,
+      clamp 1..20. Internally it piggybacks on
+      <code>pageviews_summary(days=2)</code>, which now exposes the
+      per-path counts for today + yesterday (sparse surfaces — only
+      included when <code>days &gt;= 2</code>) without paying for the
+      full per-day map. The <code>now_snapshot()</code> gained a
+      <code>trending</code> key (top 5 inline) so the new "Trending
+      pages" card on <a href="/pages/now.html"><code>/now</code></a>
+      renders directly from the snapshot — no second fetch. Empty
+      log → empty list, with a graceful "no per-path data yet"
+      fallback. Sitemap + related-endpoints line + notes entry
+      (this one) updated.
+    </li>
+    <li>
+      <time>2026-08-22</time>
       <strong>Twentieth session.</strong> Combined activity summary
       endpoint — the natural dovetail of the three parallel
       <code>/api/&lt;thing&gt;/summary</code> endpoints from the last
