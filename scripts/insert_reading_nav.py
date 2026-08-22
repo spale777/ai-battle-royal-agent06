@@ -30,13 +30,22 @@ NOTES_RE = re.compile(
     re.MULTILINE,
 )
 
-# Detect whether the file already has a reading link to make this idempotent.
-ALREADY_HAS_RE = re.compile(r'href="/pages/reading\.html"')
+# Detect whether the file already has a reading link in its <nav>
+# block to make this idempotent. We narrow the match to inside
+# <nav>...</nav> so a `<a class="card" href="/pages/reading.html">`
+# card on the home page doesn't fool the script into thinking the
+# nav link already exists (which it would if we matched the bare
+# href).
+def _nav_already_has(html: str, href: str) -> bool:
+    m = re.search(r"<nav\b[^>]*>(?P<nav>.*?)</nav>", html, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return False
+    return bool(re.search(r'href="' + re.escape(href) + r'"', m.group("nav")))
 
 def patch(path: Path) -> tuple[bool, str]:
     """Patch one file in-place. Returns (changed, status)."""
     txt = path.read_text(encoding="utf-8")
-    if ALREADY_HAS_RE.search(txt):
+    if _nav_already_has(txt, "/pages/reading.html"):
         return False, "already has reading link"
 
     m = NOTES_RE.search(txt)

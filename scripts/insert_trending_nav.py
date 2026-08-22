@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Insert the 'daily' link into the <nav> block of every HTML page.
+"""Insert the 'trending' link into the <nav> block of every HTML page.
 
-The link goes right after 'guessing' and before 'what's new', matching
-the position I put it in on /pages/daily.html itself. Idempotent: a
-'daily' link that's already present in the nav will not be added again.
+The link goes right after 'daily' and before 'what's new', matching the
+position I put it in on /pages/trending.html itself. Idempotent: a
+'trending' link that's already present in the nav will not be added
+again.
 
-Usage:  python3 scripts/insert_daily_nav.py
+Usage:  python3 scripts/insert_trending_nav.py
 """
 from __future__ import annotations
 
@@ -20,19 +21,19 @@ PAGES = (
     + [ROOT / "site" / "404.html"]
 )
 
-# The new nav entry. On the daily page itself it becomes 'current'.
-NEW_LINK_PLAIN = '  <a href="/pages/daily.html">daily</a>\n'
-NEW_LINK_ACTIVE = '  <a href="/pages/daily.html" class="current">daily</a>\n'
+# The new nav entry. On the trending page itself it becomes 'current'.
+NEW_LINK_PLAIN = '  <a href="/pages/trending.html">trending</a>\n'
+NEW_LINK_ACTIVE = '  <a href="/pages/trending.html" class="current">trending</a>\n'
 
-# Anchor we insert AFTER, on its own line: '  <a ... >guessing</a>'.
-GUESSING_RE = re.compile(
-    r'^(?P<indent>[ \t]*)<a href="/pages/guessing\.html"(?:\s+class="current")?>(?P<rest>guessing</a>)\s*$',
+# Anchor we insert AFTER, on its own line: '  <a ... >daily</a>'.
+DAILY_RE = re.compile(
+    r'^(?P<indent>[ \t]*)<a href="/pages/daily\.html"(?:\s+class="current")?>(?P<rest>daily</a>)\s*$',
     re.MULTILINE,
 )
 
-# Detect whether the file already has a daily link in its <nav>
+# Detect whether the file already has a trending link in its <nav>
 # block to make this idempotent. We narrow the match to inside
-# <nav>...</nav> so a `<a class="card" href="/pages/daily.html">`
+# <nav>...</nav> so a `<a class="card" href="/pages/trending.html">`
 # card on the home page doesn't fool the script into thinking the nav
 # link already exists (which it would if we matched the bare href).
 def _nav_already_has(html: str, href: str) -> bool:
@@ -45,16 +46,16 @@ def _nav_already_has(html: str, href: str) -> bool:
 def patch(path: Path) -> tuple[bool, str]:
     """Patch one file in-place. Returns (changed, status)."""
     txt = path.read_text(encoding="utf-8")
-    if _nav_already_has(txt, "/pages/daily.html"):
-        return False, "already has daily link"
+    if _nav_already_has(txt, "/pages/trending.html"):
+        return False, "already has trending link"
 
-    m = GUESSING_RE.search(txt)
+    m = DAILY_RE.search(txt)
     if not m:
-        return False, "no guessing anchor found"
+        return False, "no daily anchor found"
 
     indent = m.group("indent")
-    is_daily_page = path.name == "daily.html"
-    new_line = (NEW_LINK_ACTIVE if is_daily_page else NEW_LINK_PLAIN).replace(
+    is_trending_page = path.name == "trending.html"
+    new_line = (NEW_LINK_ACTIVE if is_trending_page else NEW_LINK_PLAIN).replace(
         "  ", indent
     )
     insertion = m.end()

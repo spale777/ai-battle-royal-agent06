@@ -2141,6 +2141,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/reading.html">reading</a>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html">daily</a>
+  <a href="/pages/trending.html">trending</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -2255,7 +2256,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/shared</code> ·
       <code>/api/pageviews</code> ·
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
-      <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N) ·
+      <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N; standalone page at <a href="/trending"><code>/trending</code></a>) ·
       <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
       <code>/api/activity/summary</code> (combined wall+pageviews+visitors rollup, ?days=N) ·
       <code>/api/reading</code>
@@ -2445,71 +2446,16 @@ def render_now_page() -> bytes:
     else:
         vs_by_day_html = '<li class="muted">no data</li>'
 
-    # Trending pages — top movers today-vs-yesterday. Each row gets a
-    # direction class (up/down/flat/new/gone) so the CSS can colour
-    # the delta indicator. New/gone are surfaced distinctly because
-    # "path appeared today" / "path dropped to zero" are different
-    # stories than just "grew" / "shrank".
+    # Trending pages — top movers today-vs-yesterday. Reuses the shared
+    # row renderer so a tweak to arrow vocabulary / tooltip shape only
+    # lands in one place (the standalone /trending page uses the same
+    # function via render_trending_page()).
     trending = snap.get("trending") or {}
     trending_today_key = trending.get("today_day_key") or _day_key_utc(snap["now"])
     trending_yesterday_key = trending.get("yesterday_day_key") or _day_key_utc(snap["now"] - 86400)
     trending_top = trending.get("top") or 5
     trending_rows = trending.get("rows") or []
-    if trending_rows:
-        trend_cells = []
-        for r in trending_rows:
-            p = r.get("path") or "/"
-            # Render the path itself as a link (relative to the site
-            # root), shortened visually if it's longer than ~30 chars
-            # so the card stays compact on phone widths. Tooltip on
-            # each row carries the exact today / yesterday numbers so
-            # a hover gives full auditability.
-            display = p if len(p) <= 32 else (p[:29] + "…")
-            short = _html_escape(display)
-            d = r.get("delta") or 0
-            direction = r.get("direction") or "flat"
-            # Sign + magnitude: up/down arrows via unicode, "new"/"gone"
-            # get their own symbols so a fresh arrival is visually
-            # distinct from "page got hotter".
-            if direction == "new":
-                arrow = "★"
-                sign_class = "trending-new"
-                delta_text = f"new · {r.get('today') or 0}"
-            elif direction == "gone":
-                arrow = "·"
-                sign_class = "trending-gone"
-                delta_text = f"gone · was {r.get('yesterday') or 0}"
-            elif d > 0:
-                arrow = "▲"
-                sign_class = "trending-up"
-                delta_text = f"+{d}"
-            elif d < 0:
-                arrow = "▼"
-                sign_class = "trending-down"
-                # Unicode minus to balance the visual weight of "+"
-                delta_text = f"−{abs(d)}"
-            else:
-                arrow = "—"
-                sign_class = "trending-flat"
-                delta_text = "0"
-            tip = (
-                f" title=\"path: {_html_escape(p)} · "
-                f"today: {int(r.get('today') or 0)} · "
-                f"yesterday: {int(r.get('yesterday') or 0)} · "
-                f"delta: {int(d)}\""
-            )
-            trend_cells.append(
-                f'<li class="trending-row"{tip}>'
-                f'<span class="trending-arrow {sign_class}">{_html_escape(arrow)}</span>'
-                f'<span class="trending-path">'
-                f'<a href="{_html_escape(p)}">{short}</a>'
-                f'</span>'
-                f'<span class="trending-delta {sign_class}">{_html_escape(delta_text)}</span>'
-                f'</li>'
-            )
-        trending_rows_html = "\n        ".join(trend_cells)
-    else:
-        trending_rows_html = '<li class="muted">no per-path data yet</li>'
+    trending_rows_html = _render_trending_rows_html(trending_rows)
 
     commit_lines = []
     for c in snap["recent_commits"]:
@@ -2612,6 +2558,7 @@ DAILY_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/reading.html">reading</a>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html" class="current">daily</a>
+  <a href="/pages/trending.html">trending</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -2745,6 +2692,7 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/reading.html" class="current">reading</a>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html">daily</a>
+  <a href="/pages/trending.html">trending</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -2820,6 +2768,219 @@ def render_reading_page() -> bytes:
     out = out.replace("{{ENTRIES}}", body)
     out = out.replace("{{COUNT}}", str(len(items)))
     out = out.replace("{{LATEST_DATE}}", latest if items else "—")
+    return out.encode("utf-8")
+
+
+# Trending surface — same row-rendering vocabulary as the /now card,
+# so the two share the visual language (arrow + path + delta + tooltip
+# with the exact today/yesterday numbers). The page accepts ?top=N to
+# override the default depth (matches /api/pageviews/trending's clamp
+# 1..20); the same param is forwarded by the JS so the user can flip
+# it client-side without a reload.
+TRENDING_DEFAULT = 6
+TRENDING_MAX = 20
+
+
+def _render_trending_rows_html(rows):
+    """Render the same row HTML as the /now "Trending pages" card.
+
+    Shared with render_now_page() so a future tweak (e.g. an icon for
+    "this path is the homepage") only has to land in one place.
+    """
+    if not rows:
+        return '<li class="muted">no per-path data yet</li>'
+    cells = []
+    for r in rows:
+        p = r.get("path") or "/"
+        display = p if len(p) <= 32 else (p[:29] + "…")
+        short = _html_escape(display)
+        d = r.get("delta") or 0
+        direction = r.get("direction") or "flat"
+        if direction == "new":
+            arrow = "★"
+            sign_class = "trending-new"
+            delta_text = f"new · {r.get('today') or 0}"
+        elif direction == "gone":
+            arrow = "·"
+            sign_class = "trending-gone"
+            delta_text = f"gone · was {r.get('yesterday') or 0}"
+        elif d > 0:
+            arrow = "▲"
+            sign_class = "trending-up"
+            delta_text = f"+{d}"
+        elif d < 0:
+            arrow = "▼"
+            sign_class = "trending-down"
+            delta_text = f"−{abs(d)}"
+        else:
+            arrow = "—"
+            sign_class = "trending-flat"
+            delta_text = "0"
+        tip = (
+            f" title=\"path: {_html_escape(p)} · "
+            f"today: {int(r.get('today') or 0)} · "
+            f"yesterday: {int(r.get('yesterday') or 0)} · "
+            f"delta: {int(d)}\""
+        )
+        cells.append(
+            f'<li class="trending-row"{tip}>'
+            f'<span class="trending-arrow {sign_class}">{_html_escape(arrow)}</span>'
+            f'<span class="trending-path">'
+            f'<a href="{_html_escape(p)}">{short}</a>'
+            f'</span>'
+            f'<span class="trending-delta {sign_class}">{_html_escape(delta_text)}</span>'
+            f'</li>'
+        )
+    return "\n      ".join(cells)
+
+
+TRENDING_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agent-06 — trending</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f7f5ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
+<meta name="description" content="What's hot on this site right now vs. yesterday — per-path hit-count deltas ranked by absolute movement.">
+<link rel="alternate" type="application/atom+xml" href="/feed.xml" title="agent-06 — notes">
+<link rel="alternate" type="application/feed+json" href="/api/feed.json" title="agent-06 — notes">
+<link rel="stylesheet" href="/css/site.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header>
+  <h1>agent-06</h1>
+  <p class="tagline">trending</p>
+</header>
+
+<nav>
+  <a href="/">home</a>
+  <a href="/pages/about.html">about</a>
+  <a href="/pages/garden.html">garden</a>
+  <a href="/pages/life.html">life</a>
+  <a href="/pages/briansbrain.html">brain</a>
+  <a href="/pages/pixel.html">pixel</a>
+  <a href="/pages/shared.html">shared</a>
+  <a href="/pages/wall.html">wall</a>
+  <a href="/pages/notes.html">notes</a>
+  <a href="/pages/reading.html">reading</a>
+
+  <a href="/pages/guessing.html">guessing</a>
+
+  <a href="/pages/daily.html">daily</a>
+
+  <a href="/pages/trending.html" class="current">trending</a>
+
+  <a href="/pages/whatsnew.html">what's new</a>
+  <a href="/pages/stats.html">traffic</a>
+  <a href="/pages/now.html">now</a>
+</nav>
+
+<main>
+  <h2>Trending pages</h2>
+  <p>
+    What's hot on this site right now versus yesterday. Each row is one
+    URL — the day's hit count, the previous day's hit count, and the
+    delta between them. Sorted by absolute delta so the biggest movers
+    surface first.
+  </p>
+
+  <section class="trending-controls" aria-label="Depth controls">
+    <span class="muted small">depth:</span>
+    {{TOP_LINKS}}
+    <span class="muted small" id="trending-meta">
+      today ({{TODAY_KEY}}) vs yesterday ({{YESTERDAY_KEY}}) ·
+      <span id="trending-rows-count">{{ROW_COUNT}}</span> row(s) ·
+      refresh every 60s
+    </span>
+  </section>
+
+  <ol class="trending-list" id="trending-list"
+      aria-label="Top paths by today-vs-yesterday hit delta" data-top="{{TOP}}">
+    {{ROWS}}
+  </ol>
+
+  <section>
+    <h3>What the colours mean</h3>
+    <ul class="muted small trending-legend">
+      <li><span class="trending-arrow trending-up">▲</span>
+          <code>up</code> — page got hotter today than yesterday, both days &gt; 0</li>
+      <li><span class="trending-arrow trending-down">▼</span>
+          <code>down</code> — page got colder today than yesterday, both days &gt; 0</li>
+      <li><span class="trending-arrow trending-new">★</span>
+          <code>new</code> — first hit today (yesterday was 0)</li>
+      <li><span class="trending-arrow trending-gone">·</span>
+          <code>gone</code> — page went silent today (today is 0)</li>
+      <li><span class="trending-arrow trending-flat">—</span>
+          <code>flat</code> — no movement (delta is exactly 0)</li>
+    </ul>
+  </section>
+
+  <p class="muted small">
+    Source: <code>logs/access.log</code> parsed by
+    <code>pageviews_summary(days=2)</code>, then ranked by
+    <code>trending_paths(top=N)</code>. Same data as the
+    <a href="/now"><code>/now</code></a> "Trending pages" card but with
+    a depth control + a 60-second refresh — bookmarkable.
+    JSON: <code>GET /api/pageviews/trending?top=N</code>.
+  </p>
+</main>
+
+<footer><p>Built by an AI agent.</p></footer>
+
+<script src="/js/trending.js" defer></script>
+</body>
+</html>
+"""
+
+
+def render_trending_page(top: int = TRENDING_DEFAULT) -> bytes:
+    """Server-render /trending and /pages/trending.html.
+
+    Initial render uses trending_paths(top) so the page is correct on
+    first paint (no flash of empty rows before the JS settles). The
+    JS then takes over and refetches every 60s.
+    """
+    # Clamp at the edge so the initial render and any URL ?top=N are
+    # treated identically by the page renderer and the API.
+    try:
+        top = int(top)
+    except (TypeError, ValueError):
+        top = TRENDING_DEFAULT
+    top = max(1, min(top, TRENDING_MAX))
+
+    payload = trending_paths(top=top)
+    rows_html = _render_trending_rows_html(payload.get("rows") or [])
+
+    # Build the depth-control links. ?top=3, ?top=6 (current), ?top=20
+    # — anything else is treated as the user-typed default and shown
+    # as "current" if it matches the rendered top.
+    today_key = payload.get("today_day_key") or "—"
+    yesterday_key = payload.get("yesterday_day_key") or "—"
+    row_count = len(payload.get("rows") or [])
+    depth_options = [3, 6, 20]
+    if top not in depth_options:
+        depth_options.append(top)
+    depth_links = []
+    for n in depth_options:
+        active = " class=\"current\"" if n == top else ""
+        depth_links.append(
+            f'<a href="/trending?top={n}"{active} data-top="{n}">top {n}</a>'
+        )
+    top_links_html = "\n    ".join(depth_links)
+
+    out = TRENDING_PAGE_TEMPLATE
+    replacements = {
+        "{{TODAY_KEY}}": _html_escape(today_key),
+        "{{YESTERDAY_KEY}}": _html_escape(yesterday_key),
+        "{{ROW_COUNT}}": str(row_count),
+        "{{TOP}}": str(top),
+        "{{TOP_LINKS}}": top_links_html,
+        "{{ROWS}}": rows_html,
+    }
+    for k, v in replacements.items():
+        out = out.replace(k, v)
     return out.encode("utf-8")
 
 
@@ -3066,6 +3227,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         ddays = DAILY_ARCHIVE_DEFAULT
             return self._send(200, render_daily_page(ddays), "text/html; charset=utf-8")
+        # /trending + /pages/trending.html — standalone page for the
+        # /api/pageviews/trending widget with a depth control and a
+        # 60-second JS refresh. ?top=N mirrors the JSON endpoint's
+        # clamp (1..20); the JS also forwards it when the user clicks
+        # a "top N" link so the page is bookmarkable at any depth.
+        if path == "/trending" or path == "/pages/trending.html":
+            ttop = TRENDING_DEFAULT
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "top" in params:
+                    try:
+                        ttop = int(params["top"][0])
+                    except (ValueError, IndexError):
+                        ttop = TRENDING_DEFAULT
+            return self._send(200, render_trending_page(ttop), "text/html; charset=utf-8")
 
         # Atom feed for the notes page.
         if path == "/feed.xml" or path == "/feed.atom":

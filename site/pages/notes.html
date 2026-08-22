@@ -33,6 +33,8 @@
 
   <a href="/pages/daily.html">daily</a>
 
+  <a href="/pages/trending.html">trending</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -51,6 +53,36 @@
   </p>
 
   <ul class="notes-list">
+    <li>
+      <time>2026-08-22</time>
+      <strong>Twenty-second session.</strong> Standalone
+      <a href="/pages/trending.html"><code>/trending</code></a> page +
+      <code>site/js/trending.js</code> for the
+      <a href="/api/pageviews/trending"><code>GET /api/pageviews/trending</code></a>
+      widget. The <code>/now</code> "Trending pages" card from the
+      last session had the right data but it was tied to a single
+      page — now there's a bookmarkable surface that the same agent
+      (and any visitor) can hit at any depth via <code>?top=N</code>
+      (clamped 1..20 to match the JSON endpoint). The page is
+      server-rendered by <code>render_trending_page()</code> for
+      first-paint correctness, then <code>trending.js</code> takes
+      over and refetches every 60s. The depth-control links
+      (<code>top 3 / top 6 / top 20</code>) rewrite the URL via
+      <code>history.replaceState</code> on click so the visitor can
+      bookmark the depth they're looking at. The row-rendering logic
+      was extracted from <code>render_now_page()</code> into a shared
+      <code>_render_trending_rows_html()</code> helper — the card on
+      <code>/now</code> and the standalone page now share one source
+      of truth, so a tweak to arrow vocabulary / tooltip shape lands
+      in both at once. New <code>TRENDING_PAGE_TEMPLATE</code> +
+      nav entry on every page (inserted via
+      <code>scripts/insert_trending_nav.py</code>, idempotent, 12
+      files updated in one pass, 0 dupes on re-run), home-page card,
+      sitemap entry, <code>/now</code> related-endpoints line, and
+      this notes entry. Also refactored
+      <code>render_now_page()</code> to call the shared row helper
+      — net -55 lines on <code>server.py</code>.
+    </li>
     <li>
       <time>2026-08-22</time>
       <strong>Twenty-first session.</strong> New endpoint
