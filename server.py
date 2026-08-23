@@ -1027,6 +1027,120 @@ def daily_archive(days: int = DAILY_ARCHIVE_DEFAULT) -> dict:
     }
 
 
+def guessing_stats() -> dict:
+    """Lifetime + per-day stats over all guessing sessions in logs/guessing.json.
+
+    Reads the same log that guessing_create/guess/abandon write to. The
+    log is bounded by GUESSING_MAX_SESSIONS (~5000), but in practice
+    stays far below that.
+
+    For each mode (random / daily), surfaces:
+      lifetime: total, won, lost, abandoned, active,
+                win_rate_pct (won / max(1, won+lost) * 100 rounded),
+                won_with_full_history (count of `won` sessions whose
+                    history survived cold-load — these are the only
+                    sessions whose guess count we know precisely)
+      today (UTC): same breakdown for sessions created today UTC.
+
+    Skips sessions whose `secret` is outside [GUESSING_MIN..GUESSING_MAX]
+    (defensive against junk entries that might land in the log on
+    cold-load). Sessions missing the `mode` key are treated as `random`
+    — the original mode before the daily variant shipped — so they
+    still show up in the random column, not in daily's.
+
+    Cold-load caveat: load_guessing_state() drops the history array of
+    finished games (won / lost / abandoned). That means we can never
+    recover the exact guess count for sessions that finished before
+    the server last restarted. We surface this as `won_with_full_history`
+    so a reader knows how many won games actually have a reliable
+    guess count. Sessions won during the current process do show up
+    there.
+
+    Returns:
+      {
+        "ok": True,
+        "today_day_key": "YYYY-MM-DD",
+        "range": [lo, hi],
+        "budget": 7,
+        "modes": {
+          "random": {"lifetime": {...}, "today": {...}},
+          "daily":  {"lifetime": {...}, "today": {...}},
+        },
+      }
+    """
+    today_key = _day_key_utc()
+
+    # Default bucket shape — every mode gets one even if no sessions.
+    def blank_bucket():
+        return {"active": 0, "won": 0, "lost": 0, "abandoned": 0,
+                "total": 0, "won_with_full_history": 0}
+
+    def win_rate(b):
+        decided = b["won"] + b["lost"]
+        if decided == 0:
+            return None
+        return round((b["won"] / decided) * 100, 1)
+
+    out = {
+        "random": {"lifetime": blank_bucket(), "today": blank_bucket()},
+        "daily":  {"lifetime": blank_bucket(), "today": blank_bucket()},
+    }
+
+    try:
+        load_guessing_state()
+        with _guessing_lock:
+            sessions = list(_guessing_state.get("sessions", {}).values())
+    except Exception:
+        sessions = []
+
+    for sess in sessions:
+        try:
+            secret = int(sess.get("secret"))
+            status = str(sess.get("status") or "active")
+            created = int(sess.get("created") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not (GUESSING_MIN <= secret <= GUESSING_MAX):
+            continue
+        if status not in ("active", "won", "lost", "abandoned"):
+            status = "active"
+        mode_raw = sess.get("mode") or "random"
+        mode = mode_raw if mode_raw in ("random", "daily") else "random"
+        history = sess.get("history") or []
+        # Record in lifetime bucket.
+        out[mode]["lifetime"]["total"] += 1
+        out[mode]["lifetime"][status] = out[mode]["lifetime"].get(status, 0) + 1
+        if status == "won" and history:
+            out[mode]["lifetime"]["won_with_full_history"] += 1
+        # Today bucket: created today UTC counts. Cold-load has created
+        # because that's a top-line field that is never stripped.
+        try:
+            created_key = _day_key_utc(created)
+        except Exception:
+            created_key = ""
+        if created_key == today_key:
+            out[mode]["today"]["total"] += 1
+            out[mode]["today"][status] = out[mode]["today"].get(status, 0) + 1
+            if status == "won" and history:
+                out[mode]["today"]["won_with_full_history"] += 1
+
+    # Win rate for each (mode, window). None means "no decided games yet"
+    # (don't divide by zero); the JSON surface carries it as null so a
+    # client can render "—".
+    for mode in ("random", "daily"):
+        wr_life = win_rate(out[mode]["lifetime"])
+        wr_today = win_rate(out[mode]["today"])
+        out[mode]["lifetime"]["win_rate_pct"] = wr_life  # type: ignore[assignment]
+        out[mode]["today"]["win_rate_pct"] = wr_today  # type: ignore[assignment]
+    return {
+        "ok": True,
+        "today_day_key": today_key,
+        "range": [GUESSING_MIN, GUESSING_MAX],
+        "budget": GUESSING_BUDGET,
+        "modes": out,
+    }
+
+
 def read_stats_history() -> list:
     """Return all logged samples as a list of {t, v}."""
     try:
@@ -3404,6 +3518,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/guessing/daily":
             status, body = guessing_daily_info()
             return self._json(status, body)
+        # /api/guessing/stats — anonymous lifetime + today stats over
+        # every session in logs/guessing.json. No personal data; just
+        # win/lost/abandoned/active counts per mode.
+        if path == "/api/guessing/stats":
+            return self._json(200, guessing_stats())
         # /api/daily/archive?days=N — past daily puzzles with their secret
         # (only when no active daily session exists for that day) plus
         # win/lost/abandoned stats from logs/guessing.json. Today is

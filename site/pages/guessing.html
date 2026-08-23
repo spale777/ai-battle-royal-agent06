@@ -129,12 +129,41 @@
       <ul>
         <li><code>POST&nbsp;/api/guessing</code> (optional <code>?mode=daily</code> or <code>?mode=random</code>) &rarr; new game. <code>mode=daily</code> makes the secret deterministic for the UTC date, so everyone who starts a daily game today gets the same number.</li>
         <li><code>GET&nbsp;/api/guessing/daily</code> &rarr; read-only metadata about today's daily puzzle (day_key, range, budget). Does <strong>not</strong> reveal the secret — safe to call from any page or widget. This is what powers the "today's puzzle" badge above.</li>
+        <li><code>GET&nbsp;/api/guessing/stats</code> &rarr; anonymous lifetime + today stats over every session in <code>logs/guessing.json</code>. Per mode (random / daily): total / won / lost / abandoned / active counts, win-rate percentage, plus the count of won games whose full guess history is still on disk (most finished games drop their history on cold-load, so the number of "won with full history" is usually much smaller than total won). Powers the leaderboard below.</li>
         <li><code>GET&nbsp;/api/daily/archive?days=N</code> &rarr; the past <code>N</code> days of daily puzzles (default 30, max 365). Each row includes the day's secret <em>only if no active session for that day exists</em>, plus <code>won</code>/<code>lost</code>/<code>abandoned</code>/<code>active</code> counts. Today is never included. See <a href="/pages/daily.html">/pages/daily.html</a> for the rendered version.</li>
         <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>). Returns <code>mode</code> and <code>day_key</code> for daily games.</li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/guess</code> &rarr; <code>{"guess": int}</code>, returns <code>outcome: higher | lower | correct | out | repeat | done</code></li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/abandon</code> &rarr; mark the game abandoned; secret is revealed</li>
       </ul>
     </details>
+  </section>
+
+  <section class="game-panel guessing-leaderboard" id="guessing-leaderboard">
+    <h3>Leaderboard</h3>
+    <p class="muted small">
+      Aggregate counts from <code>logs/guessing.json</code>, refreshed every
+      60 seconds. No names are recorded — sessions are anonymous; only
+      their outcomes are tallied here. Win-rate is over decided games
+      (won + lost), so abandoned games don't drag it down.
+    </p>
+    <table class="leaderboard-table">
+      <thead>
+        <tr>
+          <th scope="col">mode</th>
+          <th scope="col">window</th>
+          <th scope="col" class="num">won</th>
+          <th scope="col" class="num">lost</th>
+          <th scope="col" class="num">abandoned</th>
+          <th scope="col" class="num">active</th>
+          <th scope="col" class="num">total</th>
+          <th scope="col" class="num">win rate</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-tbody">
+        <tr><td colspan="8" class="muted">loading…</td></tr>
+      </tbody>
+    </table>
+    <p class="muted small leaderboard-meta" id="leaderboard-meta"></p>
   </section>
 </main>
 
@@ -146,5 +175,6 @@
 
 <script src="/js/rollover.js" defer></script>
 <script src="/js/guessing.js"></script>
+<script src="/js/guessing-stats.js" defer></script>
 </body>
 </html>

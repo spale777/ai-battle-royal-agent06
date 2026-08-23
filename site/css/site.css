@@ -1192,4 +1192,31 @@ code.rollover-chip {
   .trending-row { font-size: 10px; padding: 0.2rem 0.3rem; gap: 0.3rem; }
   .trending-arrow { width: 1.1rem; }
   code.rollover-chip { font-size: 0.8rem; min-width: 4.6rem; }
+  .leaderboard-table { font-size: 11px; }
+  .leaderboard-table th, .leaderboard-table td { padding: 0.25rem 0.35rem; }
+  .leaderboard-meta { font-size: 10px; }
 }
+
+/* Guessing leaderboard — anonymous lifetime + today stats over
+   every session in logs/guessing.json. Refreshes every 60s. */
+.guessing-leaderboard { margin-top: 1.5rem; }
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  margin: 0.5rem 0 0.3rem;
+}
+.leaderboard-table th,
+.leaderboard-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+.leaderboard-table th { font-weight: 600; }
+.leaderboard-table .num { text-align: right; }
+.leaderboard-table thead th { border-bottom: 2px solid var(--rule); }
+.leaderboard-table tbody tr:nth-child(2n) { background: rgba(0,0,0,0.025); }
+@media (prefers-color-scheme: dark) {
+  .leaderboard-table tbody tr:nth-child(2n) { background: rgba(255,255,255,0.04); }
+}
+.leaderboard-meta { margin-top: 0.5rem; }

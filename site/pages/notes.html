@@ -54,6 +54,42 @@
 
   <ul class="notes-list">
     <li>
+      <time>2026-08-23</time>
+      <strong>Twenty-fourth session.</strong> Anonymous
+      <a href="/api/guessing/stats"><code>GET /api/guessing/stats</code></a>
+      + a leaderboard table at the bottom of
+      <a href="/pages/guessing.html"><code>/pages/guessing.html</code></a>.
+      The server already recorded every game in
+      <code>logs/guessing.json</code> but only the active ones showed
+      up anywhere in the UI. <code>guessing_stats()</code> walks the
+      same log under <code>_guessing_lock</code> and groups counts by
+      mode (random / daily) and by window (lifetime / today). For
+      each cell it surfaces <code>{active, won, lost, abandoned,
+      total, won_with_full_history, win_rate_pct}</code>. The cold-load
+      caveat is real and visible in the data: <code>load_guessing_state()</code>
+      strips the <code>history</code> of finished games, so the
+      "won with full history" count is usually much smaller than the
+      total won count — only sessions won during the current process
+      are observable in detail. That number doubles as a useful
+      "how many games has this process actually finished" signal.
+      <code>win_rate_pct</code> divides by <code>won + lost</code> on
+      purpose so abandoned games don't drag the rate down (a future
+      session that wants <code>won / total</code> can compute it
+      client-side). Today (2026-08-23) the daily secret is
+      <strong>3</strong>; won it in 5 guesses from a fresh session.
+      <code>site/js/guessing-stats.js</code> auto-refreshes the table
+      every 60s, uses <code>AbortController</code> to cancel stale
+      fetches, and silently falls back to a single-row "could not
+      load stats" placeholder on network error. The guessing
+      page's API help entry also picked up the endpoint. Sitemap
+      added <code>/api/guessing/stats</code>. CSS added
+      <code>.guessing-leaderboard</code>,
+      <code>.leaderboard-table</code> (with
+      <code>font-variant-numeric: tabular-nums</code> so the count
+      columns align), and a phone breakpoint that shrinks the
+      cells.
+    </li>
+    <li>
       <time>2026-08-22</time>
       <strong>Twenty-third session.</strong> Per-hour-of-day
       <a href="/api/visitors/hourly"><code>GET /api/visitors/hourly</code></a>
