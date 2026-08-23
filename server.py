@@ -1141,6 +1141,110 @@ def guessing_stats() -> dict:
     }
 
 
+GUESSING_RECENT_DEFAULT = 10
+GUESSING_RECENT_MAX = 50
+
+
+def guessing_recent(limit: int = GUESSING_RECENT_DEFAULT) -> dict:
+    """Return the N most recently *finished* guessing games, newest first.
+
+    Complements /api/guessing/stats (the aggregate leaderboard) with an
+    individual-game view. Excludes active sessions — only won, lost, and
+    abandoned games appear. Each row exposes:
+
+      sid               session id (truncated to 8 chars in the response
+                        so visitors can identify "the same game" without
+                        leaking the full token)
+      mode              "random" | "daily"
+      day_key           day_key for daily games, "" for random games
+      status            "won" | "lost" | "abandoned"
+      secret            the secret for the game; revealed because the
+                        game is over (matches /api/daily/archive's
+                        reveal rule — finished games expose their
+                        secret; active games do not)
+      created           unix seconds the session was created
+      last_t            unix seconds of the last guess / abandon action
+      duration_seconds  max(0, last_t - created)
+
+    Defensive:
+      - clamp(1, 50), default 10
+      - bad input (?limit=foo) falls back to 10
+      - skips sessions with status="active" and any session missing
+        a parseable secret/created/last_t (junk from cold-load)
+      - sessions that *finished during the current process* still
+        have their history, but the cold-load path strips history from
+        finished games to avoid leaking partial guess sequences, so
+        we don't surface `guesses_used` — we surface `last_t - created`
+        instead, which is observable across both in-process and
+        cold-loaded finishes
+    """
+    # Clamp + bad-input fallback.
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = GUESSING_RECENT_DEFAULT
+    if n < 1:
+        n = 1
+    if n > GUESSING_RECENT_MAX:
+        n = GUESSING_RECENT_MAX
+
+    try:
+        load_guessing_state()
+        with _guessing_lock:
+            sessions = list(_guessing_state.get("sessions", {}).items())
+    except Exception:
+        sessions = []
+
+    finished = []
+    for sid_full, sess in sessions:
+        if not isinstance(sess, dict):
+            continue
+        status = str(sess.get("status") or "")
+        if status not in ("won", "lost", "abandoned"):
+            continue
+        try:
+            secret = int(sess.get("secret"))
+            created = int(sess.get("created") or 0)
+            last_t = int(sess.get("last_t") or created)
+            sid_str = str(sid_full or "")
+        except (TypeError, ValueError):
+            continue
+        if not (GUESSING_MIN <= secret <= GUESSING_MAX):
+            continue
+        mode = str(sess.get("mode") or "random")
+        if mode not in ("random", "daily"):
+            mode = "random"
+        finished.append({
+            "sid": sid_str[:8],
+            "sid_full": sid_str,
+            "mode": mode,
+            "day_key": str(sess.get("day_key") or "") if mode == "daily" else "",
+            "status": status,
+            "secret": secret,
+            "created": created,
+            "last_t": last_t,
+            "duration_seconds": max(0, last_t - created),
+        })
+
+    # Newest first by last_t (the timestamp of the finishing action),
+    # tie-broken by created desc so two finishes in the same second
+    # are deterministically ordered.
+    finished.sort(key=lambda r: (r["last_t"], r["created"]), reverse=True)
+
+    rows = finished[:n]
+    return {
+        "ok": True,
+        "limit": n,
+        "count": len(rows),
+        "rows": rows,
+        # A small surface about the *source* the rows came from. The
+        # log is bounded by GUESSING_MAX_SESSIONS=5000 so cold-loaded
+        # finished games can drop their history but never their
+        # existence.
+        "total_finished_known": len(finished),
+    }
+
+
 def read_stats_history() -> list:
     """Return all logged samples as a list of {t, v}."""
     try:
@@ -2085,6 +2189,9 @@ def now_snapshot() -> dict:
     vis_roll = visitors_summary(7)
     vis_hourly_today = visitors_hourly(1)
     _, daily_body = guessing_daily_info()
+    # Inline "recent games" for /now. Limit to 5 so the snapshot
+    # stays compact; full depth is at /api/guessing/recent.
+    guessing_recent_top = guessing_recent(5)
 
     wall_last = wall["entries"][0] if wall.get("entries") else None
 
@@ -2121,6 +2228,14 @@ def now_snapshot() -> dict:
         # value). The full payload (rows + counts) is at
         # /api/pageviews/trending.
         "trending": trending_paths(top=5),
+        # Recently *finished* guessing games (won / lost / abandoned
+        # only — active games are excluded). Top 5 so the /now card
+        # stays compact; full depth + ?limit=N is at
+        # /api/guessing/recent. Each row carries sid / mode / status
+        # / secret / duration_seconds so the card can render the
+        # finished game's revealed secret — same reveal rule as
+        # /api/daily/archive (games over, secret is public).
+        "guessing_recent": guessing_recent_top,
         # Per-day visitor-counter rollup: today's latest + today's peak +
         # day-over-day change + last-7-days buckets. The full payload is
         # at /api/visitors/summary. Same shape as wall_today_count /
@@ -2528,6 +2643,15 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
         {{TRENDING_ROWS}}
       </ol>
     </div>
+    <div class="card">
+      <h3>Recent games</h3>
+      <p class="muted small">
+        {{RECENT_GAMES_META}}
+      </p>
+      <ol class="recent-games-list" aria-label="Most recently finished guessing games">
+        {{RECENT_GAMES_ROWS}}
+      </ol>
+    </div>
   </section>
 
   <script src="/js/rollover.js" defer></script>
@@ -2550,6 +2674,8 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
     <p class="muted small">
       Related endpoints: <code>/api/guessing/daily</code> (today's daily
       puzzle metadata, no secret leak) ·
+      <code>/api/guessing/recent</code> (most recently finished games,
+      full depth with revealed secrets, ?limit=N) ·
       <code>/api/daily/archive</code> (past daily puzzles with stats) ·
       <code>/api/wall</code> ·
       <code>/api/wall/summary</code> (per-day rollup, ?days=N) ·
@@ -2797,6 +2923,64 @@ def render_now_page() -> bytes:
     trending_rows = trending.get("rows") or []
     trending_rows_html = _render_trending_rows_html(trending_rows)
 
+    # Recent finished guessing games — top 5 from now_snapshot's
+    # inline "guessing_recent" surface. Each row renders:
+    #   status badge (won / lost / abandoned, colour-coded) ·
+    #   mode chip (random / daily) ·
+    #   revealed secret (finished games expose secrets, matches
+    #   /api/daily/archive's reveal rule) ·
+    #   duration in seconds ·
+    #   truncated sid (8 chars).
+    # Daily games with a day_key link to /pages/daily.html?days=N
+    # anchored on that day — but the daily page doesn't currently
+    # support deep-linking, so the link goes to the archive root.
+    recent_games = snap.get("guessing_recent") or {}
+    recent_games_rows = recent_games.get("rows") or []
+    recent_games_total = int(recent_games.get("total_finished_known") or 0)
+    recent_games_count = len(recent_games_rows)
+    if recent_games_rows:
+        rg_cells = []
+        for r in recent_games_rows:
+            try:
+                status = str(r.get("status") or "")
+                mode = str(r.get("mode") or "random")
+                day_key = str(r.get("day_key") or "")
+                secret_int = int(r.get("secret") or 0)
+                sid_short = str(r.get("sid") or "")
+                duration = int(r.get("duration_seconds") or 0)
+            except (TypeError, ValueError):
+                continue
+            if status not in ("won", "lost", "abandoned"):
+                continue
+            duration_str = _human_age(duration) if duration > 0 else "instant"
+            tip_parts = [f"mode: {mode}", f"sid: {sid_short}", f"duration: {duration_str}"]
+            if mode == "daily" and day_key:
+                tip_parts.append(f"day_key: {day_key}")
+            tip = " title=\"" + _html_escape(" · ".join(tip_parts)) + "\""
+            secret_str = str(secret_int)
+            rg_cells.append(
+                f'<li class="recent-game-row recent-game-{status}"{tip}>'
+                f'<span class="recent-game-status recent-game-status-{status}">{status}</span>'
+                f'<span class="recent-game-mode">{mode}</span>'
+                f'<span class="recent-game-secret">{_html_escape(secret_str)}</span>'
+                f'<span class="recent-game-sid muted">{_html_escape(sid_short)}</span>'
+                f'</li>'
+            )
+        recent_games_rows_html = "\n        ".join(rg_cells)
+    else:
+        recent_games_rows_html = '<li class="muted">no finished games yet</li>'
+
+    # Meta line: count shown + how many finished games exist total.
+    # "showing N of M" reads as a useful size hint; "of 0 finished"
+    # collapses to "no finished games yet" so we don't render a sad
+    # "top 5 of 0".
+    if recent_games_total > 0:
+        recent_games_meta = (
+            f"showing {recent_games_count} of {recent_games_total} finished games"
+        )
+    else:
+        recent_games_meta = "no finished games yet — play to seed this card"
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -2858,6 +3042,8 @@ def render_now_page() -> bytes:
         "{{TRENDING_YESTERDAY_KEY}}": _html_escape(trending_yesterday_key or ""),
         "{{TRENDING_TOP}}": str(trending_top),
         "{{TRENDING_ROWS}}": trending_rows_html,
+        "{{RECENT_GAMES_META}}": _html_escape(recent_games_meta),
+        "{{RECENT_GAMES_ROWS}}": recent_games_rows_html,
         "{{COMMITS}}": "\n      ".join(commit_lines) if commit_lines else '<li class="muted">no commits</li>',
     }
     out = NOW_PAGE_TEMPLATE
@@ -3523,6 +3709,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # win/lost/abandoned/active counts per mode.
         if path == "/api/guessing/stats":
             return self._json(200, guessing_stats())
+        # /api/guessing/recent?limit=N — most recently *finished* games.
+        # Complements /api/guessing/stats with the individual-game view
+        # (each row carries sid / mode / status / secret / duration).
+        # Defaults to 10 rows, clamped to 1..50. Bad ?limit=foo falls
+        # back to 10. Active sessions are excluded.
+        if path == "/api/guessing/recent":
+            limit = GUESSING_RECENT_DEFAULT
+            if qs:
+                from urllib.parse import parse_qs
+                params = parse_qs(qs, keep_blank_values=False)
+                if "limit" in params:
+                    try:
+                        limit = int(params["limit"][0])
+                    except (ValueError, IndexError):
+                        limit = GUESSING_RECENT_DEFAULT
+            return self._json(200, guessing_recent(limit=limit))
         # /api/daily/archive?days=N — past daily puzzles with their secret
         # (only when no active daily session exists for that day) plus
         # win/lost/abandoned stats from logs/guessing.json. Today is

@@ -1220,3 +1220,106 @@ code.rollover-chip {
   .leaderboard-table tbody tr:nth-child(2n) { background: rgba(255,255,255,0.04); }
 }
 .leaderboard-meta { margin-top: 0.5rem; }
+
+/* Recent guessing games card on /now. Inline top-5 of finished games
+   driven by now_snapshot's "guessing_recent" surface (backed by
+   /api/guessing/recent). Each row is a compact, status-coded strip
+   showing the revealed secret — finished games expose secrets,
+   matching /api/daily/archive's reveal rule. */
+.recent-games-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recent-game-row {
+  display: grid;
+  grid-template-columns: 4.5rem 3.5rem 2rem 1fr;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+}
+.recent-game-row:last-child { border-bottom: none; }
+.recent-game-row .recent-game-status {
+  display: inline-block;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  font-weight: 600;
+  width: 4rem;
+  box-sizing: border-box;
+}
+.recent-game-status-won {
+  background: rgba(40, 160, 90, 0.15);
+  color: #1f7a48;
+}
+.recent-game-status-lost {
+  background: rgba(200, 60, 60, 0.12);
+  color: #a72828;
+}
+.recent-game-status-abandoned {
+  background: rgba(120, 120, 120, 0.12);
+  color: #555;
+}
+@media (prefers-color-scheme: dark) {
+  .recent-game-status-won { background: rgba(60, 200, 120, 0.18); color: #6fe0a3; }
+  .recent-game-status-lost { background: rgba(220, 90, 90, 0.18); color: #f59393; }
+  .recent-game-status-abandoned { background: rgba(180, 180, 180, 0.14); color: #b8b8b8; }
+}
+.recent-game-row .recent-game-mode {
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  text-transform: lowercase;
+  text-align: center;
+}
+.recent-game-row .recent-game-secret {
+  font: 17px ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  text-align: right;
+  color: var(--fg);
+}
+.recent-game-row .recent-game-sid {
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.guessing-recent-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+  margin: 0.6rem 0 0.4rem;
+}
+.guessing-recent-controls .recent-link {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  text-decoration: none;
+  color: var(--muted);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+.guessing-recent-controls .recent-link:hover {
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.04);
+}
+.guessing-recent-controls .recent-link.current {
+  color: var(--fg);
+  border-color: var(--rule);
+  background: rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  .guessing-recent-controls .recent-link:hover { background: rgba(255,255,255,0.06); }
+  .guessing-recent-controls .recent-link.current { background: rgba(255,255,255,0.08); }
+}
+.recent-games-meta { margin-top: 0.5rem; }
+@media (max-width: 540px) {
+  .recent-game-row { grid-template-columns: 4rem 2.5rem 1.5rem 1fr; gap: 0.3rem; }
+  .recent-game-row .recent-game-status { font-size: 10px; padding: 0.1rem 0.25rem; width: 3.5rem; }
+  .recent-game-row .recent-game-secret { font-size: 15px; }
+}

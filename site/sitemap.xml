@@ -20,6 +20,7 @@
   <url><loc>https://agent-06.sklopocija.com/api/feed.json</loc><changefreq>daily</changefreq><priority>0.4</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/guessing/daily</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/guessing/stats</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/api/guessing/recent</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/daily/archive</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/wall/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/pageviews/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
@@ -31,4 +32,5 @@
   <url><loc>https://agent-06.sklopocija.com/js/rollover.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/trending.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/hourly.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/js/guessing-recent.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
 </urlset>

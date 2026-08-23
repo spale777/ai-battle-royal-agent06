@@ -130,6 +130,7 @@
         <li><code>POST&nbsp;/api/guessing</code> (optional <code>?mode=daily</code> or <code>?mode=random</code>) &rarr; new game. <code>mode=daily</code> makes the secret deterministic for the UTC date, so everyone who starts a daily game today gets the same number.</li>
         <li><code>GET&nbsp;/api/guessing/daily</code> &rarr; read-only metadata about today's daily puzzle (day_key, range, budget). Does <strong>not</strong> reveal the secret — safe to call from any page or widget. This is what powers the "today's puzzle" badge above.</li>
         <li><code>GET&nbsp;/api/guessing/stats</code> &rarr; anonymous lifetime + today stats over every session in <code>logs/guessing.json</code>. Per mode (random / daily): total / won / lost / abandoned / active counts, win-rate percentage, plus the count of won games whose full guess history is still on disk (most finished games drop their history on cold-load, so the number of "won with full history" is usually much smaller than total won). Powers the leaderboard below.</li>
+        <li><code>GET&nbsp;/api/guessing/recent?limit=N</code> &rarr; the N most recently <em>finished</em> games (won / lost / abandoned only — active sessions are excluded), newest first. Default 10, clamp 1..50. Each row carries sid / mode / status / secret / duration_seconds. The secret is revealed because the game is over (same reveal rule as <code>/api/daily/archive</code>). The raw <code>history</code> of guesses is <em>not</em> included &mdash; cold-load strips finished games' history &mdash; so the row shows <code>last_t - created</code> as the duration instead of a guess count. Powers the "Recent games" section below.</li>
         <li><code>GET&nbsp;/api/daily/archive?days=N</code> &rarr; the past <code>N</code> days of daily puzzles (default 30, max 365). Each row includes the day's secret <em>only if no active session for that day exists</em>, plus <code>won</code>/<code>lost</code>/<code>abandoned</code>/<code>active</code> counts. Today is never included. See <a href="/pages/daily.html">/pages/daily.html</a> for the rendered version.</li>
         <li><code>GET&nbsp;/api/guessing/&lt;sid&gt;</code> &rarr; read state (no secret leak while <code>active</code>). Returns <code>mode</code> and <code>day_key</code> for daily games.</li>
         <li><code>POST&nbsp;/api/guessing/&lt;sid&gt;/guess</code> &rarr; <code>{"guess": int}</code>, returns <code>outcome: higher | lower | correct | out | repeat | done</code></li>
@@ -165,6 +166,32 @@
     </table>
     <p class="muted small leaderboard-meta" id="leaderboard-meta"></p>
   </section>
+
+  <section class="game-panel guessing-recent-games" id="guessing-recent-games">
+    <h3>Recent games</h3>
+    <p class="muted small">
+      The most recently <em>finished</em> games from
+      <code>/api/guessing/recent</code>, refreshed every 60 seconds. Only
+      <code>won</code>, <code>lost</code>, and <code>abandoned</code> games
+      are listed — active games never appear, but finished games expose
+      their secret here (same reveal rule as
+      <a href="/api/daily/archive"><code>/api/daily/archive</code></a>).
+    </p>
+    <p class="guessing-recent-controls muted small">
+      <span>showing</span>
+      <a href="#" data-recent-top="5" class="recent-link current">top 5</a>
+      <span class="muted">·</span>
+      <a href="#" data-recent-top="10" class="recent-link">top 10</a>
+      <span class="muted">·</span>
+      <a href="#" data-recent-top="25" class="recent-link">top 25</a>
+      <span class="muted">·</span>
+      <a href="#" data-recent-top="50" class="recent-link">top 50</a>
+    </p>
+    <ol class="recent-games-list" id="recent-games-list">
+      <li class="muted">loading…</li>
+    </ol>
+    <p class="muted small recent-games-meta" id="recent-games-meta"></p>
+  </section>
 </main>
 
 <footer>
@@ -176,5 +203,6 @@
 <script src="/js/rollover.js" defer></script>
 <script src="/js/guessing.js"></script>
 <script src="/js/guessing-stats.js" defer></script>
+<script src="/js/guessing-recent.js" defer></script>
 </body>
 </html>

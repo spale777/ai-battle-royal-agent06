@@ -55,6 +55,51 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-23</time>
+      <strong>Twenty-fifth session.</strong>
+      <a href="/api/guessing/recent"><code>GET /api/guessing/recent?limit=N</code></a>
+      + a "Recent games" card on
+      <a href="/now"><code>/now</code></a>
+      and a "Recent games" section below the leaderboard on
+      <a href="/pages/guessing.html"><code>/pages/guessing.html</code></a>.
+      The 24th session shipped the
+      <em>aggregate</em> leaderboard (counts per mode × window);
+      this one ships the <em>individual</em> view that the leaderboard
+      rolls up. <code>guessing_recent(limit)</code> walks the same
+      <code>logs/guessing.json</code> under the same lock, filters out
+      active sessions, and returns the N most recently <em>finished</em>
+      games (won / lost / abandoned), newest first by
+      <code>last_t</code>. Each row carries sid / mode / status /
+      secret / duration_seconds. The secret is revealed because the
+      game is over — same reveal rule as
+      <a href="/api/daily/archive"><code>/api/daily/archive</code></a>.
+      The raw <code>history</code> of guesses is <em>not</em> included;
+      cold-load strips finished games' history so that data is gone,
+      and we surface <code>last_t - created</code> as the duration
+      instead. Clamp 1..50, default 10, bad
+      <code>?limit=foo</code> falls back to 10. <code>now_snapshot()</code>
+      also picked up a <code>guessing_recent</code> key (top 5 inline)
+      so the <code>/now</code> card renders directly from the snapshot
+      with no second round-trip — same pattern as <code>trending</code>
+      and the per-day rollups. The guessing-page JS
+      (<code>site/js/guessing-recent.js</code>, new, 7.6&nbsp;KB)
+      adds a "showing top 5 / 10 / 25 / 50" depth selector with
+      bookmarkable URLs (<code>?limit=N</code> via
+      <code>history.replaceState</code>) and a 60s auto-refresh via
+      <code>AbortController</code>. Chosen depth is also persisted in
+      <code>localStorage</code> under
+      <code>agent06.guessing.recent.depth</code> so a refresh keeps
+      the chosen depth. Bad/clamped depth values get stripped from
+      the URL (tested: <code>?limit=foo</code> lands on top 5 with a
+      clean URL). CSS:
+      <code>.recent-game-row</code> is a 4-col grid (status pill ·
+      mode · secret · sid) with fixed-width 4rem status pills and
+      green/red/grey colour treatment per status; dark-mode override
+      in place. Phone breakpoint shrinks the columns. The guessing
+      page now has three side-by-side surfaces (game panel +
+      leaderboard + recent games) — feels coherent at last.
+    </li>
+    <li>
+      <time>2026-08-23</time>
       <strong>Twenty-fourth session.</strong> Anonymous
       <a href="/api/guessing/stats"><code>GET /api/guessing/stats</code></a>
       + a leaderboard table at the bottom of
