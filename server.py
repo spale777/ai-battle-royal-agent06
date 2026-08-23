@@ -239,6 +239,83 @@ def shared_get_full() -> dict:
         }
 
 
+def shared_recent(limit: int | str = 10) -> dict:
+    """Return the N most recent paint events from the shared canvas.
+
+    Walks logs/shared.json under _shared_lock (same path the dispatcher
+    uses) so two concurrent POSTs don't tear the read. Newest first by
+    `t`, with `version` desc as a tie-break so two events with the same
+    timestamp still arrive in deterministic order. Each row carries:
+
+        x, y, v     — paint coordinates + value (always 1 for paints; the
+                      canvas is paint-only — clearing a pixel never
+                      happens in practice because shared_post only
+                      appends)
+        t           — unix second of the paint
+        t_iso       — human-readable UTC stamp for the row
+        age_seconds — age relative to `now_unix` passed in (so the caller
+                      controls "now"; the default below uses time.time())
+
+    Bad input: clamp limit to 1..50, default 10; non-int (e.g. ?limit=foo)
+    falls back to 10. The full event log is still at /api/shared; this
+    endpoint is a cheap top-N view that doesn't ship the whole history
+    over the wire on every refresh.
+    """
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = 10
+    n = max(1, min(50, n))
+    now_unix = int(time.time())
+    load_shared_state()
+    with _shared_lock:
+        events = list(_shared_state["events"])
+        version = _shared_state["version"]
+        w = SHARED_WIDTH
+        h = SHARED_HEIGHT
+    # Newest first. Sort by t desc, then break ties on insertion order
+    # (which the version number reflects because version monotonically
+    # increments per append).
+    ordered = sorted(events, key=lambda e: -(int(e.get("t", 0))))
+    top = ordered[:n]
+    rows = []
+    for e in top:
+        try:
+            x = int(e.get("x"))
+            y = int(e.get("y"))
+            t = int(e.get("t", 0))
+        except (TypeError, ValueError):
+            continue
+        v = 1 if int(e.get("v", 0)) else 0
+        if not (0 <= x < w and 0 <= y < h):
+            continue
+        rows.append({
+            "x": x,
+            "y": y,
+            "v": v,
+            "t": t,
+            "t_iso": _iso_local(t),
+            "age_seconds": max(0, now_unix - t),
+        })
+    # Unique painted cells (post-dedupe — a cell painted twice counts
+    # once). Used by /now so the card can say "N cells painted" instead
+    # of just "N events".
+    unique_cells = set()
+    for e in events:
+        try:
+            unique_cells.add((int(e["x"]), int(e["y"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return {
+        "limit": n,
+        "rows": rows,
+        "total_events": len(events),
+        "unique_cells_painted": len(unique_cells),
+        "version": version,
+        "now_unix": now_unix,
+    }
+
+
 def shared_post(ip: str, x: int, y: int, v: int) -> tuple[int, dict]:
     """Append a pixel event. Returns (http_status, payload)."""
     load_shared_state()
@@ -2214,6 +2291,12 @@ def now_snapshot() -> dict:
         "wall_by_day": wall_roll.get("by_day", []),
         "shared_version": shared.get("version"),
         "shared_events": len(shared.get("events", [])),
+        # Recent paints — top 5 inline for the /now "Shared canvas" card.
+        # Full payload (?limit=N, default 10, clamp 1..50) at
+        # /api/shared/recent. The version + total_events + unique_cells
+        # are surfaced so the card can show "N paints · K cells · vN"
+        # without a second round-trip.
+        "shared_recent": shared_recent(5),
         "pageviews_total": pv.get("total", 0),
         "pageviews_top": pv.get("top", [])[:5],
         # Per-day pageview rollup: today's count + last-7-days buckets.
@@ -2603,7 +2686,14 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
     <div class="card">
       <h3>Shared canvas</h3>
       <p class="big">{{SHARED_VERSION}}</p>
-      <p class="muted small">{{SHARED_EVENTS}} paint events</p>
+      <p class="muted small">{{SHARED_EVENTS}} paint events · {{SHARED_CELLS}} cells</p>
+      <ol class="shared-recent-list" aria-label="Most recent paints">
+        {{SHARED_RECENT_ROWS}}
+      </ol>
+      <p class="muted small shared-recent-meta">
+        {{SHARED_RECENT_META}}
+        · <a href="/pages/shared.html">paint one</a>
+      </p>
     </div>
     <div class="card">
       <h3>Pageviews</h3>
@@ -2680,6 +2770,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/wall</code> ·
       <code>/api/wall/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/shared</code> ·
+      <code>/api/shared/recent</code> (most recent paints, ?limit=N) ·
       <code>/api/pageviews</code> ·
       <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N; standalone page at <a href="/trending"><code>/trending</code></a>) ·
@@ -2981,6 +3072,51 @@ def render_now_page() -> bytes:
     else:
         recent_games_meta = "no finished games yet — play to seed this card"
 
+    # Recent paints — top 5 from now_snapshot's inline "shared_recent"
+    # surface. Each row renders:
+    #   age (e.g. "5m" / "2h" / "3d") ·
+    #   (x,y) coords in 2.5rem mono ·
+    #   colour swatch dot for the cell.
+    # The whole point of this card is to make the canvas feel alive —
+    # a flat "v25 · 25 events" count doesn't tell a visitor anyone is
+    # *here right now*. Showing the most recent paints with relative
+    # timestamps gives the canvas a pulse.
+    shared_recent_data = snap.get("shared_recent") or {}
+    shared_recent_rows = shared_recent_data.get("rows") or []
+    shared_recent_total = int(shared_recent_data.get("total_events") or 0)
+    shared_recent_count = len(shared_recent_rows)
+    if shared_recent_rows:
+        sr_cells = []
+        for r in shared_recent_rows:
+            try:
+                x = int(r.get("x"))
+                y = int(r.get("y"))
+                age_s = int(r.get("age_seconds") or 0)
+            except (TypeError, ValueError):
+                continue
+            age_str = _human_age(age_s) if age_s > 0 else "just now"
+            tip = (
+                f' title="painted at ({x},{y}) · '
+                f'{_html_escape(str(r.get("t_iso", "")))}"'
+            )
+            sr_cells.append(
+                f'<li class="shared-recent-row"{tip}>'
+                f'<span class="shared-recent-age">{_html_escape(age_str)}</span>'
+                f'<span class="shared-recent-coord mono">({x},{y})</span>'
+                f'<span class="shared-recent-swatch" aria-hidden="true"></span>'
+                f'</li>'
+            )
+        shared_recent_rows_html = "\n        ".join(sr_cells)
+    else:
+        shared_recent_rows_html = '<li class="muted">no paints yet — be the first</li>'
+
+    if shared_recent_total > 0:
+        shared_recent_meta = (
+            f"showing {shared_recent_count} of {shared_recent_total} paint events"
+        )
+    else:
+        shared_recent_meta = "no paints yet"
+
     commit_lines = []
     for c in snap["recent_commits"]:
         try:
@@ -3022,8 +3158,11 @@ def render_now_page() -> bytes:
         "{{WALL_TODAY_COUNT}}": str(wall_today_count),
         "{{WALL_TODAY_DAY_KEY}}": _html_escape(wall_today_day_key),
         "{{WALL_BY_DAY}}": wall_by_day_html,
-        "{{SHARED_VERSION}}": f"v{snap['shared_version']}" if snap["shared_version"] is not None else "—",
-        "{{SHARED_EVENTS}}": str(snap["shared_events"]),
+        "{{SHARED_VERSION}}": f"v{snap['shared_version']}" if snap['shared_version'] is not None else "—",
+        "{{SHARED_EVENTS}}": str(snap['shared_events']),
+        "{{SHARED_CELLS}}": str(snap.get('shared_recent', {}).get('unique_cells_painted', 0)),
+        "{{SHARED_RECENT_ROWS}}": shared_recent_rows_html,
+        "{{SHARED_RECENT_META}}": _html_escape(shared_recent_meta),
         "{{PV_TOTAL}}": str(snap["pageviews_total"]),
         "{{PV_UNIQUE}}": str(pv_unique),
         "{{PV_TODAY_COUNT}}": str(pv_today_count),
@@ -3594,6 +3733,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, {"commits": git_recent_commits(limit)})
         if path == "/api/shared":
             return self._json(200, shared_get_full())
+        if path == "/api/shared/recent":
+            # ?limit=N (clamped 1..50, default 10). Bad input
+            # (?limit=foo) falls back to 10 inside shared_recent().
+            limit = 10
+            try:
+                qs = self.path.split("?", 1)[1]
+                for kv in qs.split("&"):
+                    if kv.startswith("limit="):
+                        limit = kv.split("=", 1)[1]
+                        break
+            except IndexError:
+                pass
+            return self._json(200, shared_recent(limit))
         if path == "/api/wall":
             return self._json(200, wall_get_full())
         # /api/wall/summary?days=N — per-day rollup of wall entries.

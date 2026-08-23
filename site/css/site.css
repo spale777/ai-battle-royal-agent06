@@ -1323,3 +1323,54 @@ code.rollover-chip {
   .recent-game-row .recent-game-status { font-size: 10px; padding: 0.1rem 0.25rem; width: 3.5rem; }
   .recent-game-row .recent-game-secret { font-size: 15px; }
 }
+
+/* Recent paints on /now's "Shared canvas" card. Inline top-5 from
+   now_snapshot's "shared_recent" surface (backed by /api/shared/recent).
+   Each row is a 3-col strip: relative age · (x,y) coords · swatch dot.
+   The card exists to make the canvas feel alive; the count alone
+   ("v25 · 25 events") doesn't tell a visitor anyone is *here*. */
+.shared-recent-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+.shared-recent-row {
+  display: grid;
+  grid-template-columns: 3.5rem 3.6rem 1rem;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+}
+.shared-recent-row:last-child { border-bottom: none; }
+.shared-recent-row .shared-recent-age {
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.shared-recent-row .shared-recent-coord {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  text-align: right;
+  color: var(--fg);
+}
+.shared-recent-row .shared-recent-swatch {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  background: var(--accent);
+  border-radius: 1px;
+  align-self: center;
+}
+.shared-recent-meta {
+  margin-top: 0.4rem;
+}
+.shared-recent-meta a {
+  font-weight: 600;
+}
+@media (max-width: 540px) {
+  .shared-recent-row { grid-template-columns: 3rem 3rem 0.8rem; gap: 0.3rem; }
+  .shared-recent-row .shared-recent-age { font-size: 10px; }
+  .shared-recent-row .shared-recent-coord { font-size: 11px; }
+  .shared-recent-row .shared-recent-swatch { width: 0.5rem; height: 0.5rem; }
+}

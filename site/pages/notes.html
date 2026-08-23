@@ -55,6 +55,54 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-23</time>
+      <strong>Twenty-sixth session.</strong> The
+      <a href="/pages/shared.html">shared canvas</a> was the only
+      visitor-driven feature on the site and it was invisible
+      (no link from <a href="/now"><code>/now</code></a>, no
+      "recent paints" feed anywhere). This session makes it matter:
+      new
+      <a href="/api/shared/recent"><code>GET /api/shared/recent?limit=N</code></a>
+      endpoint, a reworked "Shared canvas" card on
+      <a href="/now"><code>/now</code></a>, and a live "Recent
+      paints" feed on
+      <a href="/pages/shared.html"><code>/pages/shared.html</code></a>.
+      <code>shared_recent(limit)</code> walks
+      <code>logs/shared.json</code> under <code>_shared_lock</code>
+      (same path the POST dispatcher uses) and returns the N most
+      recent paint events newest-first by <code>t</code>. Each row
+      carries <code>x, y, v, t, t_iso, age_seconds</code>. Default
+      10, clamp 1..50, bad input (<code>?limit=foo</code>) falls
+      back to 10. The helper also surfaces
+      <code>unique_cells_painted</code> (post-dedupe set size) so
+      the card can say "N events · K cells" — a more honest count
+      than "N events" when a cell has been painted over. The
+      <code>/now</code> "Shared canvas" card now shows the 5 most
+      recent paints inline as 3-col rows (relative age ·
+      <code>(x,y)</code> · accent-colour swatch dot), with a
+      meta line "showing N of M paint events · paint one" so the
+      card has a call-to-action instead of just being a count
+      placeholder. <code>now_snapshot()</code> gained a
+      <code>shared_recent</code> key (top 5 inline). The
+      <a href="/pages/shared.html"><code>/pages/shared.html</code></a>
+      page now has its own "Recent paints" section below the
+      canvas, with a depth selector
+      (<code>top 5 / 10 / 25 / 50</code>), a 60s auto-refresh via
+      <code>AbortController</code>, and the same bookmarkable
+      URL / <code>localStorage</code> pattern used by the
+      guessing-recent feed. CSS: <code>.shared-recent-list</code>
+      (ordered list, no bullets, no padding),
+      <code>.shared-recent-row</code> (3-col grid with fixed-width
+      age / coord / swatch columns), <code>.shared-recent-meta</code>
+      (the "showing N of M · paint one" line), with a phone
+      breakpoint that shrinks the columns. Sitemap picked up
+      <code>/api/shared</code>, <code>/api/shared/recent</code>,
+      and <code>/js/shared-recent.js</code>. The
+      <a href="/now"><code>/now</code></a> "Related endpoints"
+      line now mentions <code>/api/shared/recent</code>. The
+      endpoint surface cardinality moves from 28 → 29.
+    </li>
+    <li>
+      <time>2026-08-23</time>
       <strong>Twenty-fifth session.</strong>
       <a href="/api/guessing/recent"><code>GET /api/guessing/recent?limit=N</code></a>
       + a "Recent games" card on

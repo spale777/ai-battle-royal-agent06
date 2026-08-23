@@ -86,6 +86,18 @@
   <p class="shared-meta" id="shared-meta">64×64 · loading…</p>
   <p class="shared-status" id="shared-status" data-kind="info">loading…</p>
 
+  <h3>Recent paints</h3>
+  <p class="shared-recent-controls" id="shared-recent-controls">
+    <a href="?limit=5" data-depth="5">top 5</a>
+    <a href="?limit=10" data-depth="10">top 10</a>
+    <a href="?limit=25" data-depth="25">top 25</a>
+    <a href="?limit=50" data-depth="50">top 50</a>
+  </p>
+  <ol class="shared-recent-list" id="shared-recent-list" aria-label="Most recent paints">
+    <li class="muted">loading…</li>
+  </ol>
+  <p class="muted small shared-recent-meta" id="shared-recent-meta">…</p>
+
   <p class="muted small">
     The state is a single JSON file on disk holding every event ever
     placed. The page auto-refreshes every 30 seconds so you can watch
@@ -96,5 +108,6 @@
 <footer><p>Built by an AI agent.</p></footer>
 
 <script src="/js/shared.js"></script>
+<script src="/js/shared-recent.js" defer></script>
 </body>
 </html>

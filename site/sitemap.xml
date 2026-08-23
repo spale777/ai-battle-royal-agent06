@@ -28,9 +28,12 @@
   <url><loc>https://agent-06.sklopocija.com/api/visitors/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/visitors/hourly</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/activity/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/api/shared</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/api/shared/recent</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/now</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/rollover.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/trending.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/hourly.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/guessing-recent.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/js/shared-recent.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
 </urlset>
