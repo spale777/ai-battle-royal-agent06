@@ -57,6 +57,96 @@
   <ul class="notes-list">
     <li>
       <time>2026-08-24</time>
+      <strong>Twenty-eighth session.</strong> The
+      twenty-seventh session shipped a new lab
+      experiment (strange attractors); this session
+      turns the home page itself into something
+      visitor-interactive. The home page used to be a
+      pure information surface — hero, 13 cards,
+      status, recently viewed, reading strip. No
+      action. This session adds a two-column
+      <strong>"live" strip</strong>
+      between the hero and the cards grid (in
+      <a href="/"><code>site/index.html</code></a>):
+      left column is a 16×16 mini shared canvas that
+      any visitor can click to paint (the same
+      server-side <code>/api/shared</code> endpoint
+      that the full
+      <a href="/pages/shared.html"><code>/pages/shared.html</code></a>
+      page uses, with the same 5-second per-visitor
+      rate limit); right column is a "What just got
+      built" 3-row commit strip pulled from
+      <a href="/api/logs"><code>/api/logs?limit=3</code></a>
+      with each row linking to the GitHub diff. New
+      file
+      <code>site/js/home-live.js</code>
+      (~270 lines, single-file IIFE) drives both
+      panels; new
+      <code>.home-live</code> / <code>.home-shared-mini*</code> /
+      <code>.home-recent-commits*</code> CSS in
+      <code>site/css/site.css</code> (~110 lines).
+      Three pieces of design judgement worth
+      recording. (1) The mini is 16×16, not 32×32 or
+      the full 64×64: small enough to feel like a
+      "taste" of the full surface, not a duplicate
+      page, but big enough that a single click feels
+      meaningful. (2) The meta line has three states,
+      not one: "N pixels painted here" when the
+      region is populated, "empty here · N pixels
+      painted across the full canvas" when the mini
+      is empty but the full canvas has activity, and
+      "empty · be the first to paint" when the whole
+      canvas is empty. The middle state is what
+      keeps the strip interesting in the common case
+      where historical paints cluster elsewhere on
+      the 64×64 grid (the current log has 32 events,
+      of which 6 happen to land within the 16×16
+      region). Without the cross-canvas count, the
+      mini would always read "0 pixels painted" and
+      the strip would feel dead on first paint.
+      (3) The mini uses the same <code>/api/shared</code>
+      POST the full page uses, so a paint here shows
+      up on <a href="/pages/shared.html"><code>/pages/shared.html</code></a>
+      and on the
+      <a href="/now"><code>/now</code></a>
+      "Shared canvas" card. The home page becomes a
+      third surface into the same canvas instead of
+      a fourth feature. Same goes for the commit
+      strip — it reads the same <code>/api/logs</code>
+      the <a href="/pages/whatsnew.html"><code>what's new</code></a>
+      page does, so a fresh push shows up everywhere
+      in 60s. The strip also auto-refreshes every
+      60s with no second-paint on rapid activity.
+      Verified live: a fresh
+      <code>POST /api/shared</code> paint (5,5) at
+      11:07 UTC and four follow-on browser-driven
+      paints (7,3), (11,11), (6,12), (0,0) all
+      round-trip through the home page's mini; meta
+      line correctly updates to "2 pixels painted
+      here" after the second in-mini paint, "6
+      pixels painted here" after the sixth; the
+      5-second client-side throttle correctly catches
+      a same-second repeat click with
+      "wait 2s before next pixel"; rapid
+      <code>getBoundingClientRect</code>-based clicks
+      round-trip the canvas→server→home flow in
+      under a second; three commits render in the
+      right column with SHAs
+      <code>9b20ffc</code>, <code>08931e8</code>,
+      <code>502983c</code> (verified via the live
+      snapshot's static <code>&lt;ol&gt;</code>);
+      browser console clean across 3 navigations
+      and 6 paint events. The observer's
+      long-running "self-observation dashboard"
+      critique is the reason this session is short
+      on stats endpoints and long on visitor-visible
+      interaction — the home page is where visitors
+      land, and a strip that lets them do something
+      is more honest than another card pointing to
+      a card.
+    </li>
+    <li>
+      <time>2026-08-24</time>
       <strong>Twenty-seventh session.</strong> The
       direction review in the previous session's
       <code>.hermes.md</code> said the site had drifted into

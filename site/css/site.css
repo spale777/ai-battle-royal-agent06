@@ -860,6 +860,126 @@ canvas.garden {
   word-break: break-word;
 }
 
+/* Home-page "live" strip — mini shared canvas + recent commits */
+.home-live {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  margin: 0 0 2rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+}
+
+@media (max-width: 38rem) {
+  .home-live { grid-template-columns: minmax(0, 1fr); }
+}
+
+.home-live h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.home-live-col {
+  min-width: 0;
+}
+
+.home-shared-mini-wrap {
+  display: inline-block;
+  margin: 0.6rem 0 0;
+  background: var(--bg);
+  padding: 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  max-width: 100%;
+}
+
+canvas.home-shared-mini {
+  display: block;
+  background: var(--bg);
+  image-rendering: pixelated;
+  cursor: crosshair;
+  max-width: 100%;
+  height: auto;
+}
+
+.home-shared-mini-meta {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  margin: 0.45rem 0 0.2rem;
+}
+
+.home-shared-mini-status {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+}
+
+.home-shared-mini-status[data-kind="ok"]   { color: var(--accent); }
+.home-shared-mini-status[data-kind="err"]  { color: #b13a3a; }
+.home-shared-mini-status[data-kind="wait"] { color: var(--link); }
+
+.home-shared-mini-feed {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0 0;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.home-shared-mini-feed li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.18rem 0;
+  border-bottom: 1px dotted var(--rule);
+}
+
+.home-shared-mini-feed li:last-child { border-bottom: none; }
+.home-shared-mini-feed .mini-feed-coord { color: var(--accent); }
+.home-shared-mini-feed .mini-feed-ago { color: var(--muted); }
+
+.home-recent-commits {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+}
+
+.home-recent-commits li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px dotted var(--rule);
+  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.home-recent-commits li:last-child { border-bottom: none; }
+
+.home-recent-commits .commit-sha {
+  color: var(--link);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.home-recent-commits .commit-sha:hover { text-decoration: underline; }
+
+.home-recent-commits .commit-subject {
+  color: var(--fg);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-family: ui-serif, "Iowan Old Style", Georgia, serif;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.home-recent-commits .commit-ago {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* Recently viewed list on home */
 .recent-pages {
   list-style: none;

@@ -57,6 +57,38 @@
     </p>
   </section>
 
+  <section class="home-live" aria-label="What is happening on this site right now">
+    <div class="home-live-col home-shared-mini-col">
+      <h3>Paint a pixel</h3>
+      <p class="muted small">
+        A 16×16 taste of the
+        <a href="/pages/shared.html">full 64×64 shared canvas</a>.
+        Click any cell. The same server-side canvas that everyone
+        else paints; one pixel every five seconds per visitor.
+      </p>
+      <div class="home-shared-mini-wrap">
+        <canvas id="home-shared-mini" class="home-shared-mini" width="256" height="256"></canvas>
+      </div>
+      <p class="home-shared-mini-meta" id="home-shared-mini-meta">16×16 · loading…</p>
+      <p class="home-shared-mini-status" id="home-shared-mini-status" data-kind="info">loading…</p>
+      <ol class="home-shared-mini-feed" id="home-shared-mini-feed" aria-label="Most recent paints on the mini">
+        <li class="muted small">loading…</li>
+      </ol>
+    </div>
+
+    <div class="home-live-col home-recent-commits-col">
+      <h3>What just got built</h3>
+      <p class="muted small">
+        The three most recent commits. Click a SHA to see the
+        diff on GitHub. Full history is on the
+        <a href="/pages/whatsnew.html">what's new</a> page.
+      </p>
+      <ol class="home-recent-commits" id="home-recent-commits" aria-label="Most recent commits">
+        <li class="muted small">loading…</li>
+      </ol>
+    </div>
+  </section>
+
   <section class="grid">
     <a class="card" href="/pages/shared.html">
       <h3>Shared</h3>
@@ -188,5 +220,6 @@
 
 <script src="/js/status.js"></script>
 <script src="/js/reading-strip.js"></script>
+<script src="/js/home-live.js" defer></script>
 </body>
 </html>
