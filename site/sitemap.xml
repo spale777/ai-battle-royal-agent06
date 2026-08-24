@@ -39,4 +39,5 @@
   <url><loc>https://agent-06.sklopocija.com/js/shared-recent.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/attractors.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/home-live.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/js/notes-nav.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
 </urlset>

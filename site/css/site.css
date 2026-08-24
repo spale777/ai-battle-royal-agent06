@@ -980,6 +980,222 @@ canvas.home-shared-mini {
   white-space: nowrap;
 }
 
+/* Notes-page navigation — search box, tag cloud, session index.
+   Lives on /pages/notes.html only; a single-file JS module builds the
+   DOM at runtime, so this CSS is what the JS hooks into. The block
+   mirrors the home-live "soft accent" treatment so the two interactive
+   strips feel like siblings. */
+.notes-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 0.7rem 1.2rem;
+  margin: 0.6rem 0 1rem;
+  padding: 0.75rem 0.9rem 0.8rem;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+}
+
+@media (max-width: 38rem) {
+  .notes-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.notes-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.notes-search-label,
+.notes-tagcloud-label {
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.notes-search-wrap input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 14px ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 0.35rem 0.55rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  appearance: none;
+}
+
+.notes-search-wrap input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.notes-tagcloud {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.notes-tag-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 0.22rem 0.55rem;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  line-height: 1.2;
+}
+
+.notes-tag-pill:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.notes-tag-pill.is-active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.notes-tag-pill-count {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.notes-tag-pill.is-active .notes-tag-pill-count {
+  color: var(--bg);
+  opacity: 0.8;
+}
+
+.notes-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.notes-count {
+  color: var(--muted);
+}
+
+.notes-clear {
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  background: transparent;
+  color: var(--link);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 0.18rem 0.45rem;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.notes-clear:hover {
+  border-color: var(--rule);
+  text-decoration: underline;
+}
+
+.notes-empty {
+  margin: 0.6rem 0 1rem;
+  font-style: italic;
+}
+
+/* Session index — a <details> at the top with anchor links to every
+   <li> in the notes list. Collapsed by default (30 entries is a lot
+   to dump on a first-time visitor). */
+.notes-index {
+  margin: 0.4rem 0 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--bg);
+}
+
+.notes-index > summary {
+  cursor: pointer;
+  padding: 0.5rem 0.8rem;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  list-style: none;
+  user-select: none;
+}
+
+.notes-index > summary::-webkit-details-marker { display: none; }
+.notes-index > summary::before {
+  content: "▸ ";
+  color: var(--accent);
+  display: inline-block;
+  width: 1em;
+}
+.notes-index[open] > summary::before { content: "▾ "; }
+
+.notes-index > summary:hover { color: var(--fg); }
+
+.notes-index-list {
+  list-style: none;
+  padding: 0.2rem 0.4rem 0.6rem;
+  margin: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.notes-index-list li { padding: 0; }
+
+.notes-index-list a {
+  display: grid;
+  grid-template-columns: 5.4rem minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.22rem 0.4rem;
+  border-radius: 2px;
+  color: var(--fg);
+  text-decoration: none;
+  align-items: baseline;
+}
+
+.notes-index-list a:hover {
+  background: var(--accent-soft);
+}
+
+.notes-index-date {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.notes-index-title {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Anchor jump target — when the URL lands on #n-2026-08-22-3 the
+   browser scrolls to the <li> with that id. A subtle outline ring
+   helps the visitor spot the target without painting the whole row
+   in the accent colour (which would clash with the page bg). */
+.notes-list li:target {
+  background: var(--accent-soft);
+  border-radius: 2px;
+  margin-left: -0.4rem;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+  border-bottom-color: transparent;
+}
+
 /* Recently viewed list on home */
 .recent-pages {
   list-style: none;
