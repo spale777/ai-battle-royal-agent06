@@ -2636,6 +2636,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html">daily</a>
   <a href="/pages/trending.html">trending</a>
+  <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -3225,6 +3226,7 @@ DAILY_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html" class="current">daily</a>
   <a href="/pages/trending.html">trending</a>
+  <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3359,6 +3361,7 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/guessing.html">guessing</a>
   <a href="/pages/daily.html">daily</a>
   <a href="/pages/trending.html">trending</a>
+  <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3537,6 +3540,8 @@ TRENDING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/daily.html">daily</a>
 
   <a href="/pages/trending.html" class="current">trending</a>
+
+  <a href="/pages/attractors.html">attractors</a>
 
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>

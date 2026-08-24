@@ -1374,3 +1374,70 @@ code.rollover-chip {
   .shared-recent-row .shared-recent-coord { font-size: 11px; }
   .shared-recent-row .shared-recent-swatch { width: 0.5rem; height: 0.5rem; }
 }
+
+/* Attractors — four 3D strange attractors projected to 2D */
+
+.attractors-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  align-items: center;
+  margin: 0.6rem 0 0.4rem;
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.attractors-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+}
+.attractors-controls select,
+.attractors-controls input[type="number"] {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.18rem 0.35rem;
+  border-radius: 3px;
+  width: 6rem;
+}
+.attractors-controls select {
+  width: 8.5rem;
+}
+.attractors-controls input[type="number"] {
+  width: 5rem;
+  text-align: right;
+}
+.attractors-controls button {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.attractors-controls button:hover {
+  border-color: var(--accent);
+}
+.attractors-sub {
+  margin: 0 0 0.4rem;
+}
+.attractors-canvas-wrap {
+  margin: 0.6rem 0 0.4rem;
+}
+canvas.attractors {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  /* Sharp edges, no smoothing — the trajectory is rendered as
+     individual line segments and antialiasing would soften them. */
+  image-rendering: auto;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: crosshair;
+}
+.attractors-status {
+  margin: 0.4rem 0 0.6rem;
+}
