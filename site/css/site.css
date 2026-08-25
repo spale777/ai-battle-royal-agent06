@@ -533,68 +533,7 @@ canvas.garden {
   color: var(--accent);
 }
 
-/* Pageviews per-day rollup — mirror of wall-rollup-day so both strips
-   on /now can sit side by side without one stealing the other's color.
-   Same shape (label / bar / count), same bar math (CSS custom property
-   drives the visual fill; server emits only the count). */
-.pv-rollup-strip {
-  list-style: none;
-  padding: 0;
-  margin: 0.6rem 0 0 0;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.3rem;
-}
-.pv-rollup-day {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.35rem 0.1rem;
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  background: transparent;
-  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
-  color: var(--muted);
-  min-width: 0;
-}
-.pv-rollup-day.is-today {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.pv-rollup-day-label {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.pv-rollup-day-bar {
-  display: block;
-  width: 100%;
-  height: 4px;
-  background: var(--rule);
-  border-radius: 2px;
-  position: relative;
-  overflow: hidden;
-}
-.pv-rollup-day-bar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  width: calc(var(--bar, 0) * 8.33%);
-  background: var(--accent);
-  display: block;
-}
-.pv-rollup-day-count {
-  font-weight: 700;
-  color: var(--fg);
-}
-.pv-rollup-day.is-today .pv-rollup-day-count {
-  color: var(--accent);
-}
-
-/* Visitors per-day rollup — mirror of pv-rollup-* so the Visitors card
-   on /now lines up visually with the Wall + Pageviews strips above it.
-   Same shape (label / bar / count), same bar math (CSS custom property
-   drives the visual fill; server emits only the count). */
+/* Visitors per-day rollup — kept here for the Visitors card on /now.
 .vs-rollup-strip {
   list-style: none;
   padding: 0;
@@ -647,74 +586,6 @@ canvas.garden {
 }
 .vs-rollup-day.is-today .vs-rollup-day-count {
   color: var(--accent);
-}
-
-/* Visitors by-hour-of-day strip — 24 cells, one per UTC hour. Lives on
-   the /now Visitors card so a visitor can see "what hour of the day
-   tends to be busiest" at a glance. Same shape as the per-day strips
-   (label / bar / count), but with bar height bumped up so the 24 cells
-   are still legible at a quarter the width. */
-.vs-hourly-strip {
-  list-style: none;
-  padding: 0;
-  margin: 0.3rem 0 0 0;
-  display: grid;
-  grid-template-columns: repeat(24, minmax(0, 1fr));
-  gap: 0.15rem;
-}
-.vs-hourly-hour {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0.25rem 0.05rem;
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  background: transparent;
-  font: 10px ui-monospace, "SF Mono", Menlo, monospace;
-  color: var(--muted);
-  min-width: 0;
-}
-.vs-hourly-hour.is-current-hour {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(127, 127, 127, 0.04);
-}
-.vs-hourly-hour-label {
-  font-weight: 600;
-  letter-spacing: 0;
-  font-size: 9px;
-}
-.vs-hourly-hour-bar {
-  display: block;
-  width: 100%;
-  height: 14px;
-  background: var(--rule);
-  border-radius: 1px;
-  position: relative;
-  overflow: hidden;
-}
-.vs-hourly-hour-bar::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: calc(var(--bar, 0) * 8.33%);
-  background: var(--accent);
-  display: block;
-  transition: width 0.4s ease;
-}
-.vs-hourly-hour-count {
-  font-weight: 700;
-  color: var(--fg);
-  font-size: 10px;
-}
-.vs-hourly-hour.is-current-hour .vs-hourly-hour-count {
-  color: var(--accent);
-}
-.vs-hourly-label {
-  margin: 0.6rem 0 0 0;
-  font-size: 11px;
-  letter-spacing: 0.02em;
 }
 
 /* Trending pages: a small top-N list of per-path hit-count deltas
@@ -1510,15 +1381,8 @@ code.rollover-chip {
   .wall-rollup-today { font-size: 1.4rem; }
   .wall-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .wall-rollup-day-bar { height: 3px; }
-  .pv-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
-  .pv-rollup-day-bar { height: 3px; }
   .vs-rollup-day { padding: 0.25rem 0.05rem; font-size: 10px; }
   .vs-rollup-day-bar { height: 3px; }
-  .vs-hourly-hour { padding: 0.15rem 0; font-size: 9px; }
-  .vs-hourly-hour-bar { height: 10px; }
-  .vs-hourly-hour-label { font-size: 8px; }
-  .vs-hourly-hour-count { font-size: 9px; }
-  .vs-hourly-strip { gap: 0.1rem; }
   .hourly-hour { padding: 0.3rem 0.05rem; font-size: 9px; }
   .hourly-hour-bar { height: 40px; }
   .hourly-hour-label { font-size: 8px; }

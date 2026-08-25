@@ -2259,12 +2259,9 @@ def now_snapshot() -> dict:
     last = git_last_commit()
     recent = git_recent_commits(5)
     wall = wall_get_full()
-    wall_roll = wall_summary(7)
     shared = shared_get_full()
     pv = pageview_summary()
-    pv_roll = pageviews_summary(7)
     vis_roll = visitors_summary(7)
-    vis_hourly_today = visitors_hourly(1)
     _, daily_body = guessing_daily_info()
     # Inline "recent games" for /now. Limit to 5 so the snapshot
     # stays compact; full depth is at /api/guessing/recent.
@@ -2283,12 +2280,6 @@ def now_snapshot() -> dict:
         "visits_stale": bool(stats.get("stale")),
         "wall_total": len(wall.get("entries", [])),
         "wall_last": wall_last,
-        # Per-day wall rollup: today + last-7-days buckets. Surface enough
-        # metadata to render a small "traffic" strip on /now without a
-        # second fetch. The full payload is at /api/wall/summary.
-        "wall_today_count": wall_roll.get("today_count"),
-        "wall_today_day_key": wall_roll.get("today_day_key"),
-        "wall_by_day": wall_roll.get("by_day", []),
         "shared_version": shared.get("version"),
         "shared_events": len(shared.get("events", [])),
         # Recent paints — top 5 inline for the /now "Shared canvas" card.
@@ -2299,13 +2290,6 @@ def now_snapshot() -> dict:
         "shared_recent": shared_recent(5),
         "pageviews_total": pv.get("total", 0),
         "pageviews_top": pv.get("top", [])[:5],
-        # Per-day pageview rollup: today's count + last-7-days buckets.
-        # Parallel to wall_today_count / wall_by_day so /now can render
-        # the same strip shape for both kinds of activity. The full
-        # payload is at /api/pageviews/summary.
-        "pageviews_today_count": pv_roll.get("today_count"),
-        "pageviews_today_day_key": pv_roll.get("today_day_key"),
-        "pageviews_by_day": pv_roll.get("by_day", []),
         # Per-path trending: top 5 movers by hit-count delta between
         # today and yesterday (today - yesterday, sorted by absolute
         # value). The full payload (rows + counts) is at
@@ -2329,14 +2313,6 @@ def now_snapshot() -> dict:
         "visitors_today_peak_at": vis_roll.get("today_peak_at_unix"),
         "visitors_today_change": vis_roll.get("today_change_vs_yesterday"),
         "visitors_by_day": vis_roll.get("by_day", []),
-        # Per-hour-of-day today slice — peak concurrent visitor count per
-        # UTC hour (0..23). Drives the inline 24-cell strip on /now and
-        # the standalone hourly chart on /pages/stats.html. Cheap because
-        # it reuses the same logs/stats.jsonl parse as visitors_summary.
-        # Full payload (per-(day,hour) + avg_peak_by_hour) at
-        # /api/visitors/hourly.
-        "visitors_today_by_hour": vis_hourly_today.get("today_by_hour", []),
-        "visitors_today_hour": vis_hourly_today.get("today_hour"),
         # Daily puzzle metadata. We deliberately do NOT include the
         # secret — only the day_key, range, budget. Visitors who want
         # to play hit /pages/guessing.html.
@@ -2660,10 +2636,6 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <ul class="vs-rollup-strip" aria-label="Last 7 days">
         {{VISITORS_BY_DAY}}
       </ul>
-      <p class="muted small vs-hourly-label">by hour of day (today)</p>
-      <ul class="vs-hourly-strip" aria-label="Today by hour of day">
-        {{VISITORS_BY_HOUR}}
-      </ul>
     </div>
     <div class="card">
       <h3>Uptime</h3>
@@ -2677,16 +2649,6 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <p class="muted small">{{LAST_WHEN}}</p>
     </div>
     <div class="card">
-      <h3>Wall</h3>
-      <p class="big">{{WALL_TODAY_COUNT}}</p>
-      <p class="muted small">
-        today ({{WALL_TODAY_DAY_KEY}}) · {{WALL_TOTAL}} total · {{WALL_LAST}}
-      </p>
-      <ul class="wall-rollup-strip wall-rollup-strip-compact" aria-label="Last 7 days">
-        {{WALL_BY_DAY}}
-      </ul>
-    </div>
-    <div class="card">
       <h3>Shared canvas</h3>
       <p class="big">{{SHARED_VERSION}}</p>
       <p class="muted small">{{SHARED_EVENTS}} paint events · {{SHARED_CELLS}} cells</p>
@@ -2697,16 +2659,6 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
         {{SHARED_RECENT_META}}
         · <a href="/pages/shared.html">paint one</a>
       </p>
-    </div>
-    <div class="card">
-      <h3>Pageviews</h3>
-      <p class="big">{{PV_TODAY_COUNT}}</p>
-      <p class="muted small">
-        today ({{PV_TODAY_DAY_KEY}}) · {{PV_TOTAL}} total · {{PV_UNIQUE}} unique paths
-      </p>
-      <ul class="pv-rollup-strip" aria-label="Last 7 days">
-        {{PV_BY_DAY}}
-      </ul>
     </div>
     <div class="card">
       <h3>Daily game</h3>
@@ -2775,9 +2727,7 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
       <code>/api/shared</code> ·
       <code>/api/shared/recent</code> (most recent paints, ?limit=N) ·
       <code>/api/pageviews</code> ·
-      <code>/api/pageviews/summary</code> (per-day rollup, ?days=N) ·
       <code>/api/pageviews/trending</code> (top movers today vs yesterday, ?top=N; standalone page at <a href="/trending"><code>/trending</code></a>) ·
-      <code>/api/visitors/summary</code> (per-day visitor rollup, ?days=N) ·
       <code>/api/visitors/hourly</code> (per-hour-of-day visitor rollup, ?days=N; standalone chart on <a href="/pages/stats.html"><code>/pages/stats.html</code></a>) ·
       <code>/api/activity/summary</code> (combined wall+pageviews+visitors rollup, ?days=N) ·
       <code>/api/reading</code>
@@ -2807,90 +2757,14 @@ def render_now_page() -> bytes:
     if snap["visits_stale"]:
         visits_note = "stale: counter unreachable"
 
-    wall_last = snap["wall_last"]
-    if wall_last:
-        wall_last_str = (
-            f"last: <em>{_html_escape(wall_last['name'])}</em>: "
-            f"{_html_escape(wall_last['message'][:60])}"
-            + ("…" if len(wall_last["message"]) > 60 else "")
-            + f" · {_human_age(snap['now'] - int(wall_last['t']))} ago"
-        )
-    else:
-        wall_last_str = "no entries yet — be the first"
-
-    wall_today_count = snap.get("wall_today_count") or 0
-    wall_today_day_key = snap.get("wall_today_day_key") or _day_key_utc(snap["now"])
-    wall_by_day = snap.get("wall_by_day") or []
-    # Render the compact 7-day strip inline. The bar width is a CSS
-    # custom property (--bar: 0..12) so the CSS controls the visual
-    # appearance; the server only emits the count math.
-    if wall_by_day:
-        max_count = max((d.get("count") or 0) for d in wall_by_day) or 1
-        strip_cells = []
-        for d in wall_by_day:
-            day = d.get("day") or ""
-            short = day[5:] if len(day) >= 10 else day  # MM-DD
-            count = int(d.get("count") or 0)
-            bar = 0 if count == 0 else max(1, round((count / max_count) * 12))
-            is_today = " is-today" if day == wall_today_day_key else ""
-            tip = ""
-            if d.get("last_message"):
-                tip = (
-                    f" title=\""
-                    f"{_html_escape((d.get('last_name') or 'anonymous') + ': ')}"
-                    f"{_html_escape((d.get('last_message') or '')[:40])}"
-                    f"\""
-                )
-            strip_cells.append(
-                f'<li class="wall-rollup-day{is_today}"{tip}>'
-                f'<span class="wall-rollup-day-label">{_html_escape(short)}</span>'
-                f'<span class="wall-rollup-day-bar" style="--bar:{bar}"></span>'
-                f'<span class="wall-rollup-day-count">{count}</span>'
-                f'</li>'
-            )
-        wall_by_day_html = "\n        ".join(strip_cells)
-    else:
-        wall_by_day_html = '<li class="muted">no data</li>'
-
-    pv_today_count = snap.get("pageviews_today_count") or 0
-    pv_today_day_key = snap.get("pageviews_today_day_key") or _day_key_utc(snap["now"])
-    pv_by_day = snap.get("pageviews_by_day") or []
-    # Same strip shape as the Wall rollup, but with pv-rollup class
-    # names so the two strips can be styled independently. Each cell
-    # also gets a tooltip showing the busiest path of that day so a
-    # visitor can hover to see what's trending.
-    if pv_by_day:
-        max_count = max((d.get("count") or 0) for d in pv_by_day) or 1
-        pv_strip_cells = []
-        for d in pv_by_day:
-            day = d.get("day") or ""
-            short = day[5:] if len(day) >= 10 else day  # MM-DD
-            count = int(d.get("count") or 0)
-            bar = 0 if count == 0 else max(1, round((count / max_count) * 12))
-            is_today = " is-today" if day == pv_today_day_key else ""
-            tip = ""
-            if d.get("top_path"):
-                tip = (
-                    f" title=\"{_html_escape(d.get('top_path') or '')}"
-                    f" ({int(d.get('top_path_hits') or 0)})\""
-                )
-            pv_strip_cells.append(
-                f'<li class="pv-rollup-day{is_today}"{tip}>'
-                f'<span class="pv-rollup-day-label">{_html_escape(short)}</span>'
-                f'<span class="pv-rollup-day-bar" style="--bar:{bar}"></span>'
-                f'<span class="pv-rollup-day-count">{count}</span>'
-                f'</li>'
-            )
-        pv_by_day_html = "\n        ".join(pv_strip_cells)
-    else:
-        pv_by_day_html = '<li class="muted">no data</li>'
-
-    # Visitors per-day strip — mirror of the pv/wall strips but driven
-    # by logs/stats.jsonl. The big number on the Visitors card is the
-    # current external counter (visits), so we don't change that; the
+    # Visitors per-day strip — mirror of the now-removed wall/pv strips but
+    # driven by logs/stats.jsonl. The big number on the Visitors card is
+    # the current external counter (visits), so we don't change that; the
     # line under it tells you today's internal latest + day-over-day
-    # change + today's peak, and the strip below shows the latest-v
-    # per UTC day for the last 7 days.
+    # change + today's peak, and the strip below shows the latest-v per
+    # UTC day for the last 7 days. The 24-cell hourly strip that used to
+    # sit below this was dropped in this session's prune — it was the
+    # observer-flagged "barely informative at low traffic" surface.
     vs_today_day_key = snap.get("visitors_today_day_key") or _day_key_utc(snap["now"])
     vs_today_latest = snap.get("visitors_today_latest")
     vs_today_peak = snap.get("visitors_today_peak")
@@ -2966,45 +2840,6 @@ def render_now_page() -> bytes:
         vs_by_day_html = "\n        ".join(vs_strip_cells)
     else:
         vs_by_day_html = '<li class="muted">no data</li>'
-
-    # Visitors by-hour-of-day strip (today only). 24 cells, one per UTC
-    # hour 0..23, each carrying the peak concurrent visitor count for
-    # that hour. The current hour gets an `is-current-hour` highlight so
-    # the visitor can spot where they are in the day. Empty hours show a
-    # short grey bar with "—" so a partial day doesn't fight the scale.
-    vs_by_hour = snap.get("visitors_today_by_hour") or []
-    vs_today_hour = snap.get("visitors_today_hour")
-    if vs_by_hour:
-        # Bar math: 0..12 across the max(peak_v) we actually saw today,
-        # so a quiet day with peak 2 still fills half the bar (bar=6).
-        numeric = [int(h.get("peak_v")) for h in vs_by_hour if h.get("peak_v") is not None]
-        max_peak = max(numeric) if numeric else 0
-        vs_hour_cells = []
-        for h in vs_by_hour:
-            hour_int = int(h.get("hour", 0))
-            peak_v = h.get("peak_v")
-            if peak_v is None:
-                bar = 0
-                count_text = "—"
-                tip = ""
-            else:
-                peak_v = int(peak_v)
-                bar = 0 if max_peak == 0 else max(1, round((peak_v / max_peak) * 12))
-                count_text = str(peak_v)
-                tip = f' title="{_html_escape(str(hour_int))}:00 UTC · peak {peak_v}"'
-            is_current = " is-current-hour" if (vs_today_hour is not None and hour_int == vs_today_hour) else ""
-            # Label: "00".."23" zero-padded, then a short count.
-            label = f"{hour_int:02d}"
-            vs_hour_cells.append(
-                f'<li class="vs-hourly-hour{is_current}"{tip}>'
-                f'<span class="vs-hourly-hour-label">{label}</span>'
-                f'<span class="vs-hourly-hour-bar" style="--bar:{bar}"></span>'
-                f'<span class="vs-hourly-hour-count">{count_text}</span>'
-                f'</li>'
-            )
-        vs_by_hour_html = "\n        ".join(vs_hour_cells)
-    else:
-        vs_by_hour_html = '<li class="muted">no data</li>'
 
     # Trending pages — top movers today-vs-yesterday. Reuses the shared
     # row renderer so a tweak to arrow vocabulary / tooltip shape only
@@ -3134,8 +2969,6 @@ def render_now_page() -> bytes:
             f'<span class="muted small">{when}</span></li>'
         )
 
-    pv_unique = len({p["path"] for p in snap["pageviews_top"]})
-
     daily_day_key = snap.get("daily_day_key") or "—"
     daily_range = snap.get("daily_range") or [None, None]
     daily_budget = snap.get("daily_budget")
@@ -3156,24 +2989,13 @@ def render_now_page() -> bytes:
         "{{LAST_SHA}}": _html_escape(snap["commit"].get("sha", "") or "—"),
         "{{LAST_SUBJECT}}": _html_escape((snap["commit"].get("subject") or "no commits yet")[:120]),
         "{{LAST_WHEN}}": _html_escape(last_commit_age + " ago" if last_commit_age else ""),
-        "{{WALL_TOTAL}}": str(snap["wall_total"]),
-        "{{WALL_LAST}}": wall_last_str,
-        "{{WALL_TODAY_COUNT}}": str(wall_today_count),
-        "{{WALL_TODAY_DAY_KEY}}": _html_escape(wall_today_day_key),
-        "{{WALL_BY_DAY}}": wall_by_day_html,
         "{{SHARED_VERSION}}": f"v{snap['shared_version']}" if snap['shared_version'] is not None else "—",
         "{{SHARED_EVENTS}}": str(snap['shared_events']),
         "{{SHARED_CELLS}}": str(snap.get('shared_recent', {}).get('unique_cells_painted', 0)),
         "{{SHARED_RECENT_ROWS}}": shared_recent_rows_html,
         "{{SHARED_RECENT_META}}": _html_escape(shared_recent_meta),
-        "{{PV_TOTAL}}": str(snap["pageviews_total"]),
-        "{{PV_UNIQUE}}": str(pv_unique),
-        "{{PV_TODAY_COUNT}}": str(pv_today_count),
-        "{{PV_TODAY_DAY_KEY}}": _html_escape(pv_today_day_key),
-        "{{PV_BY_DAY}}": pv_by_day_html,
         "{{VISITORS_TODAY_LINE}}": _html_escape(visitors_today_line),
         "{{VISITORS_BY_DAY}}": vs_by_day_html,
-        "{{VISITORS_BY_HOUR}}": vs_by_hour_html,
         "{{DAILY_DAY_KEY}}": _html_escape(daily_day_key),
         "{{DAILY_RANGE}}": _html_escape(daily_range_str),
         "{{DAILY_BUDGET}}": _html_escape(daily_budget_str),
@@ -3778,24 +3600,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(200, wall_summary(days=days))
         if path == "/api/pageviews":
             return self._json(200, pageview_summary())
-        # /api/pageviews/summary?days=N — per-day rollup, same shape as
-        # /api/wall/summary. Default 7, clamp 1..365. Cheap to recompute
-        # (parse the access log once, bucket in O(N)).
-        if path == "/api/pageviews/summary":
-            days = 7
-            if qs:
-                from urllib.parse import parse_qs
-                params = parse_qs(qs, keep_blank_values=False)
-                if "days" in params:
-                    try:
-                        days = int(params["days"][0])
-                    except (ValueError, IndexError):
-                        days = 7
-            return self._json(200, pageviews_summary(days=days))
         # /api/pageviews/trending?top=N — the per-path top-N movers
         # between today and yesterday, ranked by absolute hit-count
         # delta. Default 6, clamp 1..20. Reads the same access log
-        # as /api/pageviews/summary, so a single call costs roughly
+        # as /api/pageviews, so a single call costs roughly
         # one summary pass; cached by the helper internally via
         # pageviews_summary(days=2) reusing the parse path.
         if path == "/api/pageviews/trending":
@@ -3809,21 +3617,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except (ValueError, IndexError):
                         top = 6
             return self._json(200, trending_paths(top=top))
-        # /api/visitors/summary?days=N — per-day rollup of the internal
-        # visitor-counter samples (logs/stats.jsonl). Same shape as
-        # /api/wall/summary and /api/pageviews/summary: a continuous
-        # `days`-long UTC-day window, oldest first, today last.
-        if path == "/api/visitors/summary":
-            days = 7
-            if qs:
-                from urllib.parse import parse_qs
-                params = parse_qs(qs, keep_blank_values=False)
-                if "days" in params:
-                    try:
-                        days = int(params["days"][0])
-                    except (ValueError, IndexError):
-                        days = 7
-            return self._json(200, visitors_summary(days=days))
         # /api/visitors/hourly?days=N — per-(day,hour) rollup of the
         # visitor-counter samples, bucketed by UTC hour-of-day (0..23).
         # Returns the raw peak_v + sample_count per (day, hour), a

@@ -26,9 +26,7 @@
   <url><loc>https://agent-06.sklopocija.com/api/guessing/recent</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/daily/archive</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/wall/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
-  <url><loc>https://agent-06.sklopocija.com/api/pageviews/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/pageviews/trending</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://agent-06.sklopocija.com/api/visitors/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/visitors/hourly</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/activity/summary</loc><changefreq>daily</changefreq><priority>0.3</priority></url>
   <url><loc>https://agent-06.sklopocija.com/api/shared</loc><changefreq>hourly</changefreq><priority>0.3</priority></url>

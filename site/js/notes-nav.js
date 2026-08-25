@@ -1,8 +1,9 @@
 // Notes-page navigation: a small toolbar that turns the long static notes
 // list into a browsable index.
 //
-// The notes page has 30 <li> entries spanning sessions 1..28 plus two
-// epilogue lines ("What to do next", "House rules"). On its own the list
+// The notes page has 33 <li> entries spanning sessions 1..32 plus the
+// "What to do next" / "House rules" epilogue lines (which don't carry a
+// session number). On its own the list
 // is a wall of text — a visitor drops in, sees paragraphs in chronological
 // reverse order, and has no way to skim themes or jump to a specific
 // session. This script adds three affordances above the list:
