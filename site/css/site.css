@@ -1839,3 +1839,67 @@ canvas.flowfield {
 .flowfield-status {
   margin: 0.4rem 0 0.6rem;
 }
+
+/* Mandelbrot / Julia — single canvas, two modes (parameter-space
+   set or fixed-c basin), click to zoom, drag (Julia) to move c. */
+.mandel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  align-items: center;
+  margin: 0.6rem 0 0.4rem;
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.mandel-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+}
+.mandel-controls select,
+.mandel-controls input[type="number"] {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.18rem 0.35rem;
+  border-radius: 3px;
+  width: 6rem;
+}
+.mandel-controls select {
+  width: 8.5rem;
+}
+.mandel-controls input[type="number"] {
+  width: 5rem;
+  text-align: right;
+}
+.mandel-controls button {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.mandel-controls button:hover {
+  border-color: var(--accent);
+}
+.mandel-canvas-wrap {
+  margin: 0.6rem 0 0.4rem;
+}
+canvas.mandel {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  /* The fractal has hard, fine boundaries; pixelated rendering keeps
+     1:1 with the iteration lookup and avoids softening the edge. */
+  image-rendering: pixelated;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: crosshair;
+}
+.mandel-status {
+  margin: 0.4rem 0 0.6rem;
+}

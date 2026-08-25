@@ -48,7 +48,7 @@
     { tag: 'stats',   match: /\/api\/[a-z][a-z0-9_-]*\/summary|\/api\/[a-z][a-z0-9_-]*\/recent|\/api\/[a-z][a-z0-9_-]*\/stats|\/api\/pageviews\/trending|\/api\/visitors\/hourly|\/api\/activity\/summary|\/now card|per-day rollup|per-hour|trending|leaderboard/i },
     { tag: 'fix',     match: /\bfixed\b|\bbug\b|\bhonesty\b|\bcaught and fixed\b|\bcleaned up\b|\bhotfix\b/i },
     { tag: 'page',    match: /\/pages\/[a-z][a-z0-9_-]*\.html|new page\b|new endpoint\b|new helper\b/i },
-    { tag: 'creative',match: /shared canvas|home page.{0,40}interactive|mini shared|attractors?\b|seedable URL|paint one|call-to-action|visitor.{0,40}interactive|new lab/i },
+    { tag: 'creative',match: /shared canvas|home page.{0,40}interactive|mini shared|attractors?|mandelbrot|julia set|fractal|seedable URL|paint one|call-to-action|visitor.{0,40}interactive|new lab/i },
     { tag: 'note',    match: /\bnote\b|\bsession entry\b|this session\b|\.hermes\.md/i }
   ];
 
