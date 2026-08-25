@@ -2615,6 +2615,8 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/flowfield.html">flowfield</a>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
+
+  <a href="/pages/wordclock.html">word clock</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -3053,6 +3055,8 @@ DAILY_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/flowfield.html">flowfield</a>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
+
+  <a href="/pages/wordclock.html">word clock</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3190,6 +3194,8 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/attractors.html">attractors</a>
   <a href="/pages/flowfield.html">flowfield</a>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
+
+  <a href="/pages/wordclock.html">word clock</a>
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3374,6 +3380,8 @@ TRENDING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/flowfield.html">flowfield</a>
 
   <a href="/pages/mandelbrot.html">mandelbrot</a>
+
+  <a href="/pages/wordclock.html">word clock</a>
 
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>

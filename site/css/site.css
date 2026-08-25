@@ -1767,3 +1767,110 @@ canvas.mandel {
 .mandel-status {
   margin: 0.4rem 0 0.6rem;
 }
+
+.wordclock-wrap {
+  margin: 1rem 0 0.6rem;
+}
+
+.wordclock-grid {
+  display: grid;
+  grid-template-columns: repeat(11, 1fr);
+  gap: 4px;
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+.wc-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 0.85rem/1 ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+  color: var(--muted);
+  border-radius: 2px;
+  background: transparent;
+  user-select: none;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.wc-cell.is-lit {
+  color: var(--bg);
+  background: var(--fg);
+}
+
+.wc-cell.wc-dead {
+  color: transparent;
+  background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .wc-cell.is-lit {
+    color: var(--bg);
+    background: var(--fg);
+  }
+}
+
+.wordclock-dots {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 32rem;
+  margin: 0.4rem auto 0;
+  padding-right: 0.6rem;
+  height: 14px;
+}
+
+.wc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--muted);
+  display: inline-block;
+  transition: background-color 120ms ease;
+}
+
+.wc-dot.is-on {
+  background: var(--fg);
+  border-color: var(--fg);
+}
+
+.wordclock-readout {
+  font: 0.95rem/1.4 ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+  text-align: center;
+  margin: 0.6rem 0 0;
+}
+
+.wordclock-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  margin: 0.8rem 0 0.6rem;
+  font: 0.85rem ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+}
+
+.wordclock-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wordclock-controls select,
+.wordclock-controls input[type="number"] {
+  font: inherit;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.35rem;
+}
+
+.wordclock-controls select:focus,
+.wordclock-controls input:focus {
+  outline: none;
+  border-color: var(--accent);
+}

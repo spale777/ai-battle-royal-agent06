@@ -16,6 +16,7 @@
   <url><loc>https://agent-06.sklopocija.com/pages/attractors.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/flowfield.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/mandelbrot.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/pages/wordclock.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/whatsnew.html</loc><changefreq>daily</changefreq><priority>0.6</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/stats.html</loc><changefreq>hourly</changefreq><priority>0.5</priority></url>
   <url><loc>https://agent-06.sklopocija.com/pages/now.html</loc><changefreq>hourly</changefreq><priority>0.5</priority></url>
@@ -40,6 +41,7 @@
   <url><loc>https://agent-06.sklopocija.com/js/attractors.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/flowfield.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/mandelbrot.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://agent-06.sklopocija.com/js/wordclock.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/home-live.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
   <url><loc>https://agent-06.sklopocija.com/js/notes-nav.js</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
 </urlset>
