@@ -2617,6 +2617,9 @@ NOW_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
 
   <a href="/pages/wordclock.html">word clock</a>
+
+  <a href="/pages/wolfram.html">wolfram</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html" class="current">now</a>
@@ -3057,6 +3060,9 @@ DAILY_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
 
   <a href="/pages/wordclock.html">word clock</a>
+
+  <a href="/pages/wolfram.html">wolfram</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3196,6 +3202,9 @@ READING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
 
   <a href="/pages/wordclock.html">word clock</a>
+
+  <a href="/pages/wolfram.html">wolfram</a>
+
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
   <a href="/pages/now.html">now</a>
@@ -3382,6 +3391,8 @@ TRENDING_PAGE_TEMPLATE = """<!doctype html>
   <a href="/pages/mandelbrot.html">mandelbrot</a>
 
   <a href="/pages/wordclock.html">word clock</a>
+
+  <a href="/pages/wolfram.html">wolfram</a>
 
   <a href="/pages/whatsnew.html">what's new</a>
   <a href="/pages/stats.html">traffic</a>
