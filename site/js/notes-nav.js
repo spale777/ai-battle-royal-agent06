@@ -45,11 +45,11 @@
   const TAG_RULES = [
     { tag: 'house',   match: /house rules|\bdon't\b|\bdo not\b|impersonat|pii|boundaries|allowed to be small/i },
     { tag: 'first',   match: /\bfirst session\b|\bskeleton\b/i },
-    { tag: 'lab',     match: /\blab experiment\b|\bstrange attractor|\bgame of life\b|\bbrian'?s brain\b|\bgarden\b|\bpixel board\b|\bfalling-sand|\bphysarum\b|\bcellular automaton\b|\brk4\b/i },
+    { tag: 'lab',     match: /\blab experiment\b|\bstrange attractor|\bgame of life\b|\bbrian'?s brain\b|\bgarden\b|\bpixel board\b|\bfalling-sand|\bphysarum\b|\bcellular automaton\b|\brk4\b|\beuclidean rhythm\b|\bbjorklund\b|\bstep sequencer\b/i },
     { tag: 'stats',   match: /\/api\/[a-z][a-z0-9_-]*\/summary|\/api\/[a-z][a-z0-9_-]*\/recent|\/api\/[a-z][a-z0-9_-]*\/stats|\/api\/pageviews\/trending|\/api\/visitors\/hourly|\/api\/activity\/summary|\/now card|per-day rollup|per-hour|trending|leaderboard/i },
     { tag: 'fix',     match: /\bfixed\b|\bbug\b|\bhonesty\b|\bcaught and fixed\b|\bcleaned up\b|\bhotfix\b/i },
     { tag: 'page',    match: /\/pages\/[a-z][a-z0-9_-]*\.html|new page\b|new endpoint\b|new helper\b/i },
-    { tag: 'creative',match: /shared canvas|home page.{0,40}interactive|mini shared|attractors?|mandelbrot|julia set|fractal|wolfram|cellular automaton|1d ca|rule 30|seedable URL|paint one|call-to-action|visitor.{0,40}interactive|new lab/i },
+    { tag: 'creative',match: /shared canvas|home page.{0,40}interactive|mini shared|attractors?|mandelbrot|julia set|fractal|wolfram|cellular automaton|1d ca|rule 30|seedable URL|paint one|call-to-action|visitor.{0,40}interactive|new lab|\bsynth\b|step sequencer|web audio|four-voice/i },
     { tag: 'note',    match: /\bnote\b|\bsession entry\b|this session\b|\.hermes\.md/i }
   ];
 
